@@ -1,0 +1,9 @@
+{
+  "name": "bacon",
+  "version": "1.0.0",
+  "description": "Isaac's personal Claude Code toolkit — namespaced as bacon:* . Bundles the architect planning pipeline (idea → proven plan → tasks), the ouroboros adversarial planning loop, the handoff out-of-scope-tangent capture skill, and the tdd test-first discipline. Personal to this account.",
+  "author": {
+    "name": "Isaac Bacon",
+    "email": "isaacbacon1@gmail.com"
+  }
+}
