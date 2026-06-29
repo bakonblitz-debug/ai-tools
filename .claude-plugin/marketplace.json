@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-code-with-me",
+  "version": "1.0.0",
+  "description": "Isaac's personal Claude Code marketplace. Hosts the `bacon` plugin (bacon:architect, bacon:ouroboros, bacon:handoff, bacon:tdd) for personal use.",
+  "owner": {
+    "name": "Isaac Bacon",
+    "email": "isaacbacon1@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "bacon",
+      "description": "Isaac's personal toolkit: architect (idea→proven-plan→tasks planning pipeline), ouroboros (adversarial planning loop), handoff (out-of-scope tangent capture + delegation), and tdd (test-first discipline). Invoked namespaced as bacon:architect / bacon:ouroboros / bacon:handoff / bacon:tdd.",
+      "author": {
+        "name": "Isaac Bacon"
+      },
+      "category": "workflow",
+      "source": "./"
+    }
+  ]
+}
