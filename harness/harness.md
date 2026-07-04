@@ -35,6 +35,36 @@ stays entirely native to Hermes, unchanged.
 
 ---
 
+## Context Protocol — mandatory for every tier and every agent
+
+The git-tracked context tree at `ai-tools/harness/context/CONTEXT.md`
+(`/mnt/www/ai-tools/harness/context/` from Hermes) is the shared source of
+truth for all AIs in this workspace — every Claude Code account, Hermes and
+all its delegated tiers, and (via the `~/www/CONTEXT.md` distillation)
+Claude Desktop. Its conventions (index format, issue-file naming,
+Desktop-sync checkboxes) are documented in its own top file. Non-negotiable
+rules for this pipeline:
+
+- **Research tier** starts at the context tree and drills into the relevant
+  project/feature folder *before* touching the codebase; its findings report
+  must note anything that contradicts or extends what the tree says.
+- **Plan and Task-Decompose tiers** receive the relevant context/ paths in
+  their piped input; task specs cite them under Pattern References.
+- **Orchestrator (`architect`)**, at task completion (after the Worker
+  Output Gate passes), writes durable outcomes back into the right
+  context/ folder — new facts, decisions, and discovered issues as
+  `<slug>-<epoch>-<date>.md` leaf files or index updates, with changed
+  index lines reverted to `- [ ]` up the chain. This is in addition to,
+  not instead of, the 5-phase doc's Phase 5 (OpenViking trajectory).
+- **Workers** don't write to context/ themselves (they implement against a
+  spec); anything durable they surface flows back through the gate report.
+
+This mirrors Hermes' Five Phases: Phase 0 (Orient) reads the tree, Phase 5
+(Record) writes it — the tiers above are how the same obligation lands when
+work is delegated instead of done inline.
+
+---
+
 ## Tiers
 
 | Tier | Model | Mechanism | Role |
@@ -125,8 +155,9 @@ explicit choice, not a silent default:
   afterward) — a one-time, human-witnessed exception to the "never touch the
   internet directly" rule for the browser handshake specifically, same
   category as other narrow, verified exceptions already made this project.
-- **Option B:** run these specific `claude` CLI calls under `isaac`'s own
-  account instead of via Hermes' `terminal` tool as `hermes` — requires
+- **Option B:** run these specific `claude` CLI calls under `zak`'s own
+  account (the normal WSL user, which keeps unrestricted internet) instead
+  of via Hermes' `terminal` tool as `hermes` — requires
   either a `terminal` tool user-switch capability (unconfirmed whether one
   exists) or moving this call outside Hermes' own process tree entirely.
   Avoids the airgap-exception question but is a bigger mechanical change.
@@ -327,11 +358,11 @@ not a copy or per-skill symlink loop.
 
 **Location correction, found during implementation:** the approved plan put
 this script at `~/.hermes/sync-skills.sh`, assuming that path was writable by
-Isaac's own `isaac` account. Verified false: `/home/isaac/.hermes/` (the
+Isaac's normal WSL account `zak`. Verified false: `/home/zak/.hermes/` (the
 whole tree, not just the nested `.hermes/.hermes/`) is owned by the `hermes`
-service account, mode 755 — `isaac` can traverse/read it but cannot write
+service account, mode 755 — `zak` can traverse/read it but cannot write
 into it (confirmed via a live `cp` attempt: Permission denied). The script
-lives instead at `ai-tools/harness/sync-skills.sh` — writable by `isaac`,
+lives instead at `ai-tools/harness/sync-skills.sh` — writable by `zak`,
 version-controlled with the rest of the harness. It edits a file inside
 `hermes`'s locked home directory, so it must be *run* as (or via `sudo -u`)
 the `hermes` account:
@@ -354,7 +385,7 @@ Isaac runs this himself, an agent cannot execute it against the live install.
 - `ai-tools/skills/git-conflict/SKILL.md` — real content, was a 14-line stub
 - `ai-tools/harness/sync-skills.sh` — new, external_dirs-based, not symlink-based
   (relocated from the originally-planned `~/.hermes/sync-skills.sh` — that
-  path turned out not to be writable by `isaac`; see the Skill registration
+  path turned out not to be writable by `zak`; see the Skill registration
   section above)
 - `~/.hermes/.hermes/config.yaml` — NOT touched by this task; `delegation.yaml`
   is a reviewable sketch only, merged in by Isaac (via `hermes`) once reviewed

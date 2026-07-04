@@ -6,6 +6,8 @@
 ## Question to Answer
 <the single question this spike must resolve — often literally a #PLAN_UNCERTAINTY>
 
+**Context:** `/mnt/www/ai-tools/harness/context/<project>/<feature>/CONTEXT.md` — check first; the answer gets recorded back there at completion (orchestrator's job, per harness.md's Context Protocol).
+
 ## Expected Outcomes
 - <an answer, a recommendation, a small proof-of-concept — not necessarily working code>
 - Escalation note: if the answer implies multi-file/interface-level work, STOP and

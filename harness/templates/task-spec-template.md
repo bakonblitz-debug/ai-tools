@@ -10,6 +10,7 @@
 - [ ] <testable condition>
 
 ## Pattern References
+- Context: `/mnt/www/ai-tools/harness/context/<project>/<feature>/CONTEXT.md` — read before starting; durable outcomes get recorded back there at completion (orchestrator's job, per harness.md's Context Protocol)
 - Follow: `<path/to/existing/file-or-utility>` — because <why this is the established convention>
 - Do NOT reinvent: <thing that already exists elsewhere>
 
