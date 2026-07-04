@@ -1,0 +1,100 @@
+# /mnt/www/ai-tools/harness/config/delegation.yaml
+#
+# REVIEWABLE SKETCH — NOT live-applied. Nothing in this file is read by
+# Hermes directly. Real Hermes 0.18.0 config.yaml has NO per-role/per-profile
+# delegation schema — confirmed directly from the installed Hermes source
+# (tools/delegate_tool.py, website/docs/user-guide/features/delegation.md):
+# `delegation:` is a single GLOBAL block (applies uniformly to every
+# delegate_task child) plus whatever kwargs delegate_task itself accepts per
+# call (goal, context, tasks[], max_iterations, role, background,
+# acp_command/acp_args) — there is no per-call `model` kwarg and no named
+# roles/profiles block.
+#
+# Two sections below:
+#   1. REAL HERMES CONFIG — copy these keys into the real
+#      ~/.hermes/.hermes/config.yaml (merge, don't overwrite) once reviewed.
+#   2. TIER REFERENCE (not read by Hermes) — documents how each pipeline tier
+#      actually resolves to a model, for human/architect-skill lookup only.
+
+# =============================================================================
+# 1. REAL HERMES CONFIG — safe to merge into config.yaml as-is
+# =============================================================================
+
+skills:
+  external_dirs:
+    - /mnt/www/ai-tools/skills   # sync-skills.sh's job is to ensure this line
+                                  # exists; see ~/.hermes/sync-skills.sh
+
+delegation:
+  max_iterations: 50             # per-child turn budget; matches the Hermes default
+  max_concurrent_children: 1     # hardware reality: 24GB VRAM, models 14-42GB —
+                                  # this box cannot usefully run parallel local
+                                  # inference across multiple children
+  max_spawn_depth: 1             # flat star topology — nothing in this pipeline
+                                  # needs grandchildren (see harness.md)
+  orchestrator_enabled: true     # harmless at max_spawn_depth: 1 (role="orchestrator"
+                                  # is a no-op until max_spawn_depth is raised) — no
+                                  # tier in this design currently sets role="orchestrator"
+  # Deliberately DO NOT set delegation.model / delegation.provider here.
+  # Leaving both unset means every delegate_task child inherits whichever
+  # model the PARENT is actively running when it issues the call — this is
+  # the only way multiple tiers (Worker=devstral:65k, ouroboros's own
+  # Proposer/Challenger=deepseek-r1:32b-65k, ouroboros Phase 5
+  # verifier=llama3.3:70b) can each get a different local model despite this
+  # block being global-only. The orchestrator (architect skill) and ouroboros
+  # both already do an explicit `/model <name>` switch immediately before
+  # each delegate_task call — existing project convention, just relied upon
+  # here per-call rather than per-skill-invocation. Setting delegation.model
+  # globally would override that per-call switching for every child
+  # uniformly, breaking the whole point of tiered models.
+
+# =============================================================================
+# 2. TIER REFERENCE — NOT a real Hermes config key, not parsed by anything.
+#    Human/architect-skill lookup only; keep in sync with harness.md by hand.
+# =============================================================================
+#
+# tier: research
+#   mechanism: claude CLI subprocess (NOT delegate_task, NOT ACP, NOT MCP)
+#   model: claude-fable-5           # personal OAuth, `claude --model <alias>`
+#   fallback_1: claude-opus-4-8     # named model unavailable/deprecated
+#   fallback_2: deepseek-r1:32b-65k # Anthropic entirely unreachable — this
+#                                   #   fallback changes MECHANISM too: runs
+#                                   #   as an ordinary local delegate_task
+#                                   #   child, not a claude CLI subprocess
+#
+# tier: plan
+#   mechanism: claude CLI subprocess, invoking superpowers:brainstorming
+#              inside that subprocess's own Claude Code session
+#   model: claude-opus-4-8
+#   fallback_1: <current frontier Opus or higher at time of use>
+#   fallback_2: deepseek-r1:32b-65k (local delegate_task child; degraded —
+#              superpowers:brainstorming is unavailable locally, so this
+#              fallback path uses architect's own reasoning instead)
+#
+# tier: verify
+#   mechanism: existing ouroboros skill, unchanged, Hermes-native (not a
+#              claude CLI subprocess at all)
+#   model (Proposer/Challenger): deepseek-r1:32b-65k
+#   model (Phase 5 verifier, Opus-authored plan): llama3.3:70b
+#   model (Phase 5 verifier, locally-authored plan): task-decompose tier
+#              (claude-sonnet-5), escalating to Plan tier on the same
+#              trigger set as Worker Output Gate escalation (see harness.md)
+#
+# tier: task-decompose
+#   mechanism: claude CLI subprocess, invoking superpowers:write-plan inside
+#              that subprocess's own Claude Code session; ALSO re-invoked
+#              (fresh, stateless call each time) to run the Worker Output
+#              Gate on every Worker result before marking a task done
+#   model: claude-sonnet-5
+#   fallback_1: claude-opus-4-8
+#   fallback_2: deepseek-r1:32b-65k (local; degraded, same caveat as plan tier)
+#
+# tier: worker
+#   mechanism: genuine Hermes delegate_task, role="leaf", toolsets=
+#              ["terminal","file"] — NOT a claude CLI subprocess (this tier
+#              is local-only by design)
+#   model (code): devstral:65k
+#   model (non-code writing/tool-use fallback): gemma3:27b-65k
+#   fallback (further): command-r:35b-65k (skills/harness/config work
+#              specifically), deepseek-r1:14b-65k, mistral-small3.1
+#   NEVER: any qwen model (documented elsewhere: hallucinates tool calls)
