@@ -18,7 +18,7 @@ actual workflow.
 
 ## Relation to other docs in this stack
 
-- **`/mnt/www/.plans/harness/hermes-harness-2026-07-02.md`** — the
+- **`/mnt/www/ai-tools/harness/hermes-harness-2026-07-02.md`** — the
   pre-existing 5-phase (Orient/Ground/Plan/Build/Verify/Record) default
   operating mode for Hermes as an engineering collaborator. Unchanged by this
   work except for one short "Harness Tiers" cross-reference section appended

@@ -10,3 +10,7 @@ Thumbs.db
 
 # Local Claude session/state (keep it out of the public repo)
 .claude/
+
+# Hermes 5-phase operating doc — lives here for durability/discoverability,
+# but stays out of git per Isaac's call (2026-07-04)
+harness/hermes-harness-2026-07-02.md

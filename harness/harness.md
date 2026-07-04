@@ -1,6 +1,6 @@
 # Harness — Tiered AI-Delegation Pipeline (`ai-tools/harness`)
 
-*Companion to `/mnt/www/.plans/harness/hermes-harness-2026-07-02.md` (the
+*Companion to `/mnt/www/ai-tools/harness/hermes-harness-2026-07-02.md` (the
 unchanged 5-phase Orient/Ground/Plan/Build/Verify/Record doc) — this document
 describes what runs *inside* that doc's Plan/Build phases when a task is big
 enough to warrant more than one model's worth of reasoning. Small tasks still
@@ -379,7 +379,7 @@ Isaac runs this himself, an agent cannot execute it against the live install.
 
 - `ai-tools/harness/README.md`, `harness.md`, `templates/task-spec-template.md`,
   `templates/spike-template.md`, `config/delegation.yaml` (all new)
-- `.plans/harness/hermes-harness-2026-07-02.md` — one new "Harness Tiers"
+- `ai-tools/harness/hermes-harness-2026-07-02.md` — one new "Harness Tiers"
   section appended after "Sync Instructions"; nothing else in that file touched
 - `ai-tools/skills/architect/SKILL.md` — targeted rewrite
 - `ai-tools/skills/git-conflict/SKILL.md` — real content, was a 14-line stub
