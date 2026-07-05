@@ -14,6 +14,9 @@ description: >
 
 # TDD (Test-Driven Development)
 
+> **Model:** Switch to `qwen2.5:32b` before starting (`/model qwen2.5:32b`).
+> Switch back to `qwen2.5:14b` when complete.
+
 ## Why this exists
 
 A test written *after* the code tends to test what the code happens to do. A test
