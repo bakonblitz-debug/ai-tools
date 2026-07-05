@@ -17,6 +17,12 @@ description: >
 
 # Ouroboros — Adversarial Planning Loop
 
+> **Model:** Switch to `deepseek-r1:14b` before starting (`/model deepseek-r1:14b`).
+> **Verifier (Phase 5):** Use `llama3.3:70b` as the cross-model verifier — different
+> architecture eliminates false consensus. Set:
+> `VERIFIER_CMD = "hermes --model llama3.3:70b -z"`
+> Switch back to `qwen2.5:14b` when complete.
+
 Two isolated agents refine a single plan by attacking it until neither has anything left to add, fix, or challenge and both agree it is sound. The converged plan is then handed to an independent verifier — ideally a *different model* — that certifies it before it is called proven. The plan is the snake's body; each round eats the previous round's debate and leaves only the refined artifact.
 
 ## What this produces
