@@ -7,7 +7,9 @@
 set -u
 REPO="${1:?usage: sync-memory.sh /path/to/ai-tools}"
 
-if [ ! -t 0 ]; then
+# read stdin only when it's a real pipe/file (hook JSON) — a terminal or an
+# open-but-idle stdin (manual/scripted runs) would make cat block forever
+if [ ! -t 0 ] && { [ -p /dev/stdin ] || [ -f /dev/stdin ]; }; then
   INPUT="$(cat 2>/dev/null || true)"
   if printf '%s' "$INPUT" | grep -q '"tool_input"'; then
     # match harness/context|memory with / or JSON-escaped \\ separators
