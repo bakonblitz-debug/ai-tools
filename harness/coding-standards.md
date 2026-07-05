@@ -40,6 +40,7 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - SOLID at every layer. One reason to change per class.
 - Dependencies get injected, never constructed inside logic.
 - Design patterns earn their place. I reach for one when it removes real complexity, not to decorate a class diagram — a pattern that needs explaining twice probably wasn't needed once.
+- Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
 
 ## Good faith
 
