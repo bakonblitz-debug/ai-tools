@@ -124,6 +124,42 @@ worktrees' branches are merged back (`git merge <worktree-branch>`), not by
 editing files inside both worktrees separately; editing both sides is how
 the same conflict re-appears at the next merge.
 
+### 7. Context & memory conflicts (ai-tools harness) — ideas, not code
+
+When the conflicted paths are under `harness/context/` or `harness/memory/`
+(the cross-machine context tree and shared Claude Code memory), the two sides
+are usually Isaac working on or talking about the same things from two
+machines at once — the conflict is between *recorded ideas*, not
+implementations. The mechanical steps above still apply (§1-2, marker
+removal, a final end-to-end read), but "run the test suite" doesn't, and the
+resolution protocol changes. It is **always interactive**: never resolve a
+context/memory conflict silently, however trivial it looks. (On the Claude
+Code side, ignore this skill's model-switch header — run as-is.)
+
+Read both sides, then classify what actually diverged:
+
+1. **Same idea, different wording or caveats** → merge into one entry that
+   keeps every caveat from both sides. Then give Isaac a short summary
+   anyway: why the conflict happened (which machines/sessions collided) and
+   what the differences were — he gets the note even when nothing needs his
+   decision.
+2. **Differing ideas** — the two entries would lead to different actions →
+   challenge Isaac on the substance: present both versions and where each
+   came from, what each implies going forward, and ask which stands — or
+   whether the divergence means his thinking moved on and both entries are
+   stale.
+3. **Philosophy-level divergence** — the entries reveal different underlying
+   principles, not just different conclusions → pick Isaac's brain: talk it
+   through until it's clear where he actually sits now, and record *that* —
+   the resolved position, dated, superseding both sides — rather than
+   merging text.
+
+In all three cases keep the `#PATH_DECISION:` commit-message note, leave the
+resolved entry in the file that owns the topic, and revert index checkboxes
+to `- [ ]` up the chain as with any context edit. `MEMORY.md` index
+collisions are almost always class 1 — merge both lines and keep the summary
+to a sentence.
+
 ## What this skill owns vs. delegates
 
 Owns: identifying real (not speculative) conflicts, understanding both sides'

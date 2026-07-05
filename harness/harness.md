@@ -1,5 +1,17 @@
 # Harness — Tiered AI-Delegation Pipeline (`ai-tools/harness`)
 
+> **STATUS UPDATE 2026-07-05 (his call):** the Claude-subprocess tiers
+> (Research / Plan / Task-Decompose via `claude` CLI) are **shelved** — he
+> keeps using Claude Code directly as the Claude lane and hands work across
+> as `.md` files on the share (`/mnt/www/.plans/`, the context tree). The
+> OPEN DESIGN DECISION below is therefore deferred/moot unless automation
+> is revisited. Verify (ouroboros), Worker (`devstral:65k`), and the
+> `architect` orchestrator remain the live targets. Also superseded: the
+> "Skill registration" section — the live install uses per-skill symlinks
+> under `~/.hermes/.hermes/skills/local/` (verified 2026-07-04 via
+> `hermes skills list`), not `skills.external_dirs`. Progress toward
+> "proficient coder/planner" is now measured empirically — see `bench/`.
+
 *Companion to `/mnt/www/ai-tools/harness/hermes-harness-2026-07-02.md` (the
 unchanged 5-phase Orient/Ground/Plan/Build/Verify/Record doc) — this document
 describes what runs *inside* that doc's Plan/Build phases when a task is big
