@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# ============================================================================
+# SUPERSEDED (2026-07-04): this script was never applied to the live install.
+# The route that actually shipped is per-skill symlinks under
+# ~/.hermes/.hermes/skills/local/<name> -> /mnt/www/ai-tools/skills/<name>,
+# confirmed working via `hermes skills list` (6 local skills recognized).
+# Kept as a fallback design only. Also note: the live WSL user is `isaac`,
+# not `zak` — the CONFIG default below was corrected accordingly.
+# ============================================================================
 # sync-skills.sh — register /mnt/www/ai-tools/skills with Hermes via the
 # skills.external_dirs config key (Hermes 0.18.0+), NOT a symlink/copy loop.
 #
@@ -51,7 +59,7 @@ set -euo pipefail
 # — sudo's HOME-preservation behavior varies by invocation (-H vs plain -u),
 # so relying on $HOME here would be fragile. Override with HERMES_CONFIG=
 # if the install ever moves.
-CONFIG="${HERMES_CONFIG:-/home/zak/.hermes/.hermes/config.yaml}"
+CONFIG="${HERMES_CONFIG:-/home/isaac/.hermes/.hermes/config.yaml}"
 SKILLS_DIR="/mnt/www/ai-tools/skills"
 
 if [[ "$(whoami)" != "hermes" ]]; then
