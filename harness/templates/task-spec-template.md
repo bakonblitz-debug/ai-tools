@@ -17,7 +17,7 @@
 ## Hand-off Tags
 #PATH_DECISION: <why this approach was chosen over alternatives considered during planning>
 #PLAN_UNCERTAINTY: <assumptions Worker must validate — if wrong, stop and ask, don't guess>
-#EXPORT_CRITICAL: <non-negotiable constraints: compliance floor, security, things not to touch>
+#EXPORT_CRITICAL: <non-negotiable constraints beyond the default floor (`coding-standards.md` always applies): things not to touch, task-specific hard limits>
 
 ## Context
 <the minimal-but-sufficient facts Worker needs — Worker has zero conversation

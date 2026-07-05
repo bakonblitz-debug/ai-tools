@@ -4,14 +4,14 @@
 #
 # LOCATION CORRECTION (found during implementation, flagging explicitly):
 #   The approved design placed this script at ~/.hermes/sync-skills.sh,
-#   assuming that path was writable by Isaac's own `isaac` account. Verified
-#   during implementation that it is NOT: /home/isaac/.hermes/ (the whole
+#   assuming that path was writable by his normal WSL account `zak`. Verified
+#   during implementation that it is NOT: /home/zak/.hermes/ (the whole
 #   tree, not just the nested .hermes/.hermes/) is owned by the `hermes`
-#   service account, mode 755 — isaac can traverse/read it but cannot write
+#   service account, mode 755 — zak can traverse/read it but cannot write
 #   into it at all (confirmed via a live `cp` attempt: Permission denied).
 #   So this script lives here instead, in the one location that's actually
-#   writable by isaac AND version-controlled alongside the rest of the
-#   harness: /mnt/www/ai-tools/harness/sync-skills.sh. Isaac runs it via:
+#   writable by zak AND version-controlled alongside the rest of the
+#   harness: /mnt/www/ai-tools/harness/sync-skills.sh. He runs it via:
 #     sudo -u hermes bash /mnt/www/ai-tools/harness/sync-skills.sh
 #   No copy into ~/.hermes/ is needed or expected — the script only needs
 #   read access to itself (this share is world-readable) and write access to
@@ -34,8 +34,8 @@
 #   2026-07-02.md's "never merge these two trust levels" rule). No
 #   passwordless sudo exists or should be attempted for this (a safety
 #   classifier has already rejected NOPASSWD:ALL for this exact machine
-#   twice, even after Isaac said yes — see claude-code-session-handoff-
-#   2026-07-03.md). Isaac runs this himself, interactively:
+#   twice, even after he said yes — see claude-code-session-handoff-
+#   2026-07-03.md). He runs this himself, interactively:
 #     sudo -u hermes bash /mnt/www/ai-tools/harness/sync-skills.sh
 #   and pastes the output back if an agent needs to confirm the result.
 #
@@ -51,7 +51,7 @@ set -euo pipefail
 # — sudo's HOME-preservation behavior varies by invocation (-H vs plain -u),
 # so relying on $HOME here would be fragile. Override with HERMES_CONFIG=
 # if the install ever moves.
-CONFIG="${HERMES_CONFIG:-/home/isaac/.hermes/.hermes/config.yaml}"
+CONFIG="${HERMES_CONFIG:-/home/zak/.hermes/.hermes/config.yaml}"
 SKILLS_DIR="/mnt/www/ai-tools/skills"
 
 if [[ "$(whoami)" != "hermes" ]]; then

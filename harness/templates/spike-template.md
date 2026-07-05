@@ -14,4 +14,4 @@
   report back — this becomes a Full Spec, don't keep building.
 
 ## Hand-off Tags
-#EXPORT_CRITICAL: <constraints that apply even to throwaway/exploratory work>
+#EXPORT_CRITICAL: <constraints that apply even to throwaway/exploratory work — `coding-standards.md` is the default floor here too>

@@ -61,7 +61,9 @@ rules for this pipeline:
 
 This mirrors Hermes' Five Phases: Phase 0 (Orient) reads the tree, Phase 5
 (Record) writes it — the tiers above are how the same obligation lands when
-work is delegated instead of done inline.
+work is delegated instead of done inline. Every tier also works to
+`coding-standards.md` (same directory) — the canonical security, privacy,
+and development floor.
 
 ---
 
@@ -92,7 +94,7 @@ never a delegation default).
 
 ---
 
-## Prerequisite: `superpowers` installed on Isaac's personal account, *inside WSL*
+## Prerequisite: `superpowers` installed on his personal account, *inside WSL*
 
 Confirmed this session: `claude plugin list` on the Windows side already
 returns "No plugins installed" — only the marketplace is registered, not the
@@ -109,8 +111,8 @@ claude   # first run — completes browser OAuth login (personal account)
 /plugin install superpowers@superpowers-marketplace
 ```
 
-**This step is entirely manual — hand to Isaac.** The OAuth browser flow is
-inherently interactive; no agent can complete `claude login` on his behalf.
+**This step is entirely manual — it's his to run.** The OAuth browser flow is
+inherently interactive; I can't complete `claude login` on his behalf.
 
 ---
 
@@ -125,9 +127,10 @@ update:
 claude auth status
 ```
 
-Confirm it resolves to Isaac's *personal* account (`isaacbacon1@gmail.com`),
-not his employer's Claude Code Team seat. If ambiguous, don't trust a cached
-token — `claude login` again explicitly (interactive, hand to Isaac).
+Confirm it resolves to his *personal* account (he knows which; check against
+the local claude config), not his employer's Claude Code Team seat. If
+ambiguous, don't trust a cached token — `claude login` again explicitly
+(interactive, his to run).
 
 ---
 
@@ -163,7 +166,7 @@ explicit choice, not a silent default:
   Avoids the airgap-exception question but is a bigger mechanical change.
 
 **Recommendation:** Option A — reuses an already-verified, already-working
-pattern instead of inventing a new mechanism. This is Isaac's decision to
+pattern instead of inventing a new mechanism. This is his decision to
 make explicitly before Research/Plan/Task-Decompose go live; don't default
 to it silently.
 
@@ -284,7 +287,8 @@ for one agent).
 
 **Worker Output Gate** (Task-Decompose tier runs this routinely, via a
 fresh stateless `claude` CLI subprocess call per Worker output, before
-reporting "done"):
+reporting "done"). The gate is `coding-standards.md` in checklist form —
+when in doubt about what an item means, that file is the ruling:
 
 ```markdown
 - [ ] Every Acceptance Criteria checkbox met
@@ -342,7 +346,7 @@ Summary of what changed (full content lives in the skill file itself):
 - Phase 5 (jira-ticket) stays dormant, renumbered from 4→5 to make room.
 
 Full Spec ceremony applies to this rewrite itself, per the approved plan —
-multi-file, behavior-changing edit to a skill Isaac actively relies on.
+multi-file, behavior-changing edit to a skill he actively relies on.
 
 ---
 
@@ -358,7 +362,7 @@ not a copy or per-skill symlink loop.
 
 **Location correction, found during implementation:** the approved plan put
 this script at `~/.hermes/sync-skills.sh`, assuming that path was writable by
-Isaac's normal WSL account `zak`. Verified false: `/home/zak/.hermes/` (the
+his normal WSL account `zak`. Verified false: `/home/zak/.hermes/` (the
 whole tree, not just the nested `.hermes/.hermes/`) is owned by the `hermes`
 service account, mode 755 — `zak` can traverse/read it but cannot write
 into it (confirmed via a live `cp` attempt: Permission denied). The script
@@ -371,7 +375,7 @@ the `hermes` account:
 sudo -u hermes bash /mnt/www/ai-tools/harness/sync-skills.sh
 ```
 
-Isaac runs this himself, an agent cannot execute it against the live install.
+He runs this himself; I can't execute it against the live install.
 
 ---
 
@@ -388,7 +392,7 @@ Isaac runs this himself, an agent cannot execute it against the live install.
   path turned out not to be writable by `zak`; see the Skill registration
   section above)
 - `~/.hermes/.hermes/config.yaml` — NOT touched by this task; `delegation.yaml`
-  is a reviewable sketch only, merged in by Isaac (via `hermes`) once reviewed
+  is a reviewable sketch only, merged in by him (via `hermes`) once reviewed
 
 ---
 
@@ -415,7 +419,7 @@ Isaac runs this himself, an agent cannot execute it against the live install.
 1. Credential Boundary Check (`claude auth status`) — needs `claude` CLI +
    `superpowers` actually installed and logged in inside WSL
 2. `sync-skills.sh`'s actual execution against the live, locked `config.yaml`
-   (needs Isaac, running as/via `hermes`)
+   (needs him, running as/via `hermes`)
 3. A trivial Spike delegating to Worker (`devstral`) end-to-end
 4. A full Research→Plan→Verify→Task-Decompose→Worker→Gate cycle, including
    confirming the gate catches a deliberately-introduced issue
@@ -424,4 +428,4 @@ Isaac runs this himself, an agent cannot execute it against the live install.
 6. `architect`'s rewritten phases actually calling the right tier at each
    step, live, and still gating correctly on `PLAN.md` status
 7. The hermes-uid-airgap-vs-OAuth decision above — genuinely unresolved,
-   needs Isaac's choice before Research/Plan/Task-Decompose go live at all
+   needs his choice before Research/Plan/Task-Decompose go live at all
