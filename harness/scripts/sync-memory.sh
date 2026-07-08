@@ -1,27 +1,40 @@
 #!/usr/bin/env bash
-# Commit + push harness context/memory changes so every machine can just pull.
-# Usage: sync-memory.sh /path/to/ai-tools
+# Commit + push context/memory changes so every machine can just pull.
+# Usage: sync-memory.sh /path/to/context-repo
+#
 # As a PostToolUse hook it reads the tool-call JSON on stdin and no-ops unless
-# the touched file is inside harness/context/ or harness/memory/. With no
-# tool_input on stdin (Stop hook, manual run) it always syncs.
+# the touched file is inside context/ or memory/. With no tool_input on stdin
+# (Stop hook, manual run) it always syncs.
+#
+# Git is OPTIONAL. If the context path is not a git repo, this no-ops silently —
+# memory still works locally. Point it at a private git repo to get sync.
 set -u
-REPO="${1:?usage: sync-memory.sh /path/to/ai-tools}"
+CTX="${1:?usage: sync-memory.sh /path/to/context-repo}"
+
+# git-optional: nothing to sync if this isn't a git repo
+[ -d "$CTX/.git" ] || exit 0
 
 # read stdin only when it's a real pipe/file (hook JSON) — a terminal or an
 # open-but-idle stdin (manual/scripted runs) would make cat block forever
 if [ ! -t 0 ] && { [ -p /dev/stdin ] || [ -f /dev/stdin ]; }; then
   INPUT="$(cat 2>/dev/null || true)"
   if printf '%s' "$INPUT" | grep -q '"tool_input"'; then
-    # match harness/context|memory with / or JSON-escaped \\ separators
-    printf '%s' "$INPUT" | grep -Eq 'harness[^"]{0,4}(context|memory)' || exit 0
+    # match a context/ or memory/ path segment (/ or JSON-escaped \\ separator)
+    printf '%s' "$INPUT" | grep -Eq '(^|/|\\)(context|memory)/' || exit 0
   fi
 fi
 
-cd "$REPO" || exit 0
-if [ -n "$(git status --porcelain -- harness/context harness/memory)" ]; then
-  git add -- harness/context harness/memory
+cd "$CTX" || exit 0
+if [ -n "$(git status --porcelain -- memory context)" ]; then
+  git add -- memory context
   git commit --quiet -m "context/memory sync from $(hostname)" || true
 fi
+
+# Offline (e.g. GitHub account suspended): commit locally, skip network so the
+# hook doesn't stall on — or leak an index.lock against — an unreachable remote.
+# Commits queue up and go out on the next run after `rm "$CTX/.git/sync-offline"`.
+# ponytail: manual marker; auto-detect from a push 403 if toggling it gets old.
+[ -f "$CTX/.git/sync-offline" ] && exit 0
 
 T=""
 command -v timeout >/dev/null 2>&1 && T="timeout 30"
