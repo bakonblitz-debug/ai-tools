@@ -14,7 +14,7 @@ The whole thing rests on one idea: **a coding agent does its best work when it h
 - [Setup](setup.md) — install checklist, Laravel Boost, plugins
 - [Models](models.md) — which model for which job, and how to switch
 - [Glossary](glossary.md) — MCP, Boost, skill, agent, the four phases
-- [Prompting guides](prompting/) — copy-paste runbooks per scenario
+- [Prompting guides](harness/prompting/) — copy-paste runbooks per scenario
 
 1. [Principles](#principles)
 2. [The Workflow](#the-workflow)
@@ -78,7 +78,7 @@ Not every change needs the full ceremony. If I already know exactly what to chan
 
 ### Phase 1 — Plan
 
-Pick the [prompting guide](prompting/) that matches the task and use its opening prompt in **Plan Mode**. A good plan states:
+Pick the [prompting guide](harness/prompting/) that matches the task and use its opening prompt in **Plan Mode**. A good plan states:
 
 - **What's changing**, including scope boundaries — what I am *and am not* doing.
 - **The files likely to be touched** (optional — naming them constrains token use when I already know; otherwise let the agent map the codebase).
@@ -91,11 +91,11 @@ If the agent hits a question it can't answer, I have it note the question in the
 
 Implement against the plan from Phase 1. Claude writes the change, runs the existing tests, and writes new tests for new behavior. On Laravel projects, **Boost + the Laravel best-practices skill** keep the generated code aligned with framework conventions.
 
-For anything with real logic — and *always* for bug fixes — I build it **test-first**: write a failing test for the next behavior, watch it fail for the right reason, write the simplest code to pass, then refactor while green. A test written before the code tests what the code is *supposed* to do, which is most of where bugs come from. This is the playbook's main "fewer bugs by construction" lever — the [`tdd` skill](skills/tdd/SKILL.md) is the discipline, [`tdd.md`](prompting/tdd.md) is the runbook. I skip the ceremony for trivial behavior-free code and throwaway spikes; I don't bureaucratize it.
+For anything with real logic — and *always* for bug fixes — I build it **test-first**: write a failing test for the next behavior, watch it fail for the right reason, write the simplest code to pass, then refactor while green. A test written before the code tests what the code is *supposed* to do, which is most of where bugs come from. This is the playbook's main "fewer bugs by construction" lever — the [`tdd` skill](harness/skills/tdd/SKILL.md) is the discipline, [`tdd.md`](harness/prompting/tdd.md) is the runbook. I skip the ceremony for trivial behavior-free code and throwaway spikes; I don't bureaucratize it.
 
 Build is done when the change compiles, tests pass (each new one having been seen to fail then pass), and I've read the diff myself.
 
-Structural cleanup of code that's drifted is *not* a build-time job — that's a separate refactor pass (see [`scoped-refactor.md`](prompting/scoped-refactor.md)). "Implement this feature" and "untangle this module" are different tasks; mixing them produces a worse version of both.
+Structural cleanup of code that's drifted is *not* a build-time job — that's a separate refactor pass (see [`scoped-refactor.md`](harness/prompting/scoped-refactor.md)). "Implement this feature" and "untangle this module" are different tasks; mixing them produces a worse version of both.
 
 ### Phase 3 — Review
 
@@ -107,7 +107,7 @@ Two passes by default:
 
 If they don't trigger on their own, I prompt: *"Have the code-review and security agents review the most recent uncommitted work."*
 
-Findings get triaged: **must-fix** (blocks the commit, loops back to Phase 2), **should-fix** (fix now if cheap, else note it), **note** (logged for later). See [`review-triggers.md`](prompting/review-triggers.md).
+Findings get triaged: **must-fix** (blocks the commit, loops back to Phase 2), **should-fix** (fix now if cheap, else note it), **note** (logged for later). See [`review-triggers.md`](harness/prompting/review-triggers.md).
 
 ### Phase 4 — Ship
 
@@ -117,16 +117,16 @@ Verify the change actually runs (not just that tests pass — run the app and lo
 
 ## Prompting guides
 
-The workflow says *what* happens. The [`prompting/`](prompting/) guides say *how to prompt* for the scenarios that come up most. Each is a short runbook: when to use it, the opening prompt, what the review follow-ups look like, and the common ways it goes wrong.
+The workflow says *what* happens. The [`harness/prompting/`](harness/prompting/) guides say *how to prompt* for the scenarios that come up most. Each is a short runbook: when to use it, the opening prompt, what the review follow-ups look like, and the common ways it goes wrong.
 
 | Scenario | Guide |
 |----------|-------|
-| Onboarding onto a codebase (mine or inherited) | [`project-intake.md`](prompting/project-intake.md) |
-| Fixing a reproducible bug | [`bug-fix.md`](prompting/bug-fix.md) |
-| Building a scoped new feature | [`new-feature.md`](prompting/new-feature.md) |
-| Building behaviour test-first (red-green-refactor) | [`tdd.md`](prompting/tdd.md) |
-| Behaviour-preserving cleanup of one area | [`scoped-refactor.md`](prompting/scoped-refactor.md) |
-| Running review on demand | [`review-triggers.md`](prompting/review-triggers.md) |
+| Onboarding onto a codebase (mine or inherited) | [`project-intake.md`](harness/prompting/project-intake.md) |
+| Fixing a reproducible bug | [`bug-fix.md`](harness/prompting/bug-fix.md) |
+| Building a scoped new feature | [`new-feature.md`](harness/prompting/new-feature.md) |
+| Building behaviour test-first (red-green-refactor) | [`tdd.md`](harness/prompting/tdd.md) |
+| Behaviour-preserving cleanup of one area | [`scoped-refactor.md`](harness/prompting/scoped-refactor.md) |
+| Running review on demand | [`review-triggers.md`](harness/prompting/review-triggers.md) |
 
 I add guides as I hit new scenarios. A guide earns its place *after* I've done the thing once and learned what the prompt should say.
 

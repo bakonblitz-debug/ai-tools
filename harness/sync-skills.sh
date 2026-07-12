@@ -2,12 +2,12 @@
 # ============================================================================
 # SUPERSEDED (2026-07-04): this script was never applied to the live install.
 # The route that actually shipped is per-skill symlinks under
-# ~/.hermes/.hermes/skills/local/<name> -> /mnt/www/ai-tools/skills/<name>,
+# ~/.hermes/.hermes/skills/local/<name> -> /mnt/www/ai-tools/harness/skills/<name>,
 # confirmed working via `hermes skills list` (6 local skills recognized).
 # Kept as a fallback design only. Also note: the live WSL user is `isaac`,
 # not `zak` — the CONFIG default below was corrected accordingly.
 # ============================================================================
-# sync-skills.sh — register /mnt/www/ai-tools/skills with Hermes via the
+# sync-skills.sh — register /mnt/www/ai-tools/harness/skills with Hermes via the
 # skills.external_dirs config key (Hermes 0.18.0+), NOT a symlink/copy loop.
 #
 # LOCATION CORRECTION (found during implementation, flagging explicitly):
@@ -31,7 +31,7 @@
 #   Hermes 0.18.0 actually reads. Hermes' real mechanism is a config key,
 #   skills.external_dirs, where each entry is a PARENT directory that gets
 #   recursively walked for SKILL.md files at any depth — not required to
-#   itself be a single skill folder. Pointing it at /mnt/www/ai-tools/skills
+#   itself be a single skill folder. Pointing it at /mnt/www/ai-tools/harness/skills
 #   once covers every skill inside it, present and future, with zero re-sync
 #   needed after adding/editing a skill. Local (bundled) skills win on name
 #   collision; nothing here can shadow a Hermes-bundled skill.
@@ -60,7 +60,7 @@ set -euo pipefail
 # so relying on $HOME here would be fragile. Override with HERMES_CONFIG=
 # if the install ever moves.
 CONFIG="${HERMES_CONFIG:-/home/isaac/.hermes/.hermes/config.yaml}"
-SKILLS_DIR="/mnt/www/ai-tools/skills"
+SKILLS_DIR="/mnt/www/ai-tools/harness/skills"
 
 if [[ "$(whoami)" != "hermes" ]]; then
   echo "WARNING: running as '$(whoami)', not 'hermes'." >&2
