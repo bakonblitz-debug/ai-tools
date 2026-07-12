@@ -15,7 +15,7 @@
         "name": "Isaac Bacon"
       },
       "category": "workflow",
-      "source": "./"
+      "source": "./harness"
     }
   ]
 }

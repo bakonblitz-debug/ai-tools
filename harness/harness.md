@@ -190,7 +190,7 @@ to it silently.
 rejects OAuth Pro/Max tokens). **Not MCP** (Hermes' own engineers excluded
 `delegate_task`-shaped work from MCP exposure — a stateless callback can't
 drive a mid-loop agent). **Not a bespoke new Python wrapper** — Hermes
-already ships this as the bundled `skills/autonomous-ai-agents/claude-code`
+already ships this as the bundled `harness/skills/autonomous-ai-agents/claude-code`
 skill, confirmed present in the v0.18.0 install. The mechanism is: invoke
 that skill (a Hermes-native skill, called by name — it is not a Claude Code
 plugin skill, do not confuse the two), which documents exactly the
@@ -339,7 +339,7 @@ call opt-in regardless of plan authorship.
 
 ---
 
-## `architect` — orchestrator (§5 rewrite, full content in `skills/architect/SKILL.md`)
+## `architect` — orchestrator (§5 rewrite, full content in `harness/skills/architect/SKILL.md`)
 
 Targeted rewrite, not a rebuild — same "conductor not coupler" philosophy.
 Summary of what changed (full content lives in the skill file itself):

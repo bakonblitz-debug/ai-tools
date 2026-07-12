@@ -42,7 +42,7 @@ command -v timeout >/dev/null 2>&1 && T="timeout 30"
 if ! $T git -c credential.interactive=false pull --rebase --autostash --quiet >/dev/null 2>&1; then
   # never leave the repo mid-rebase: abort so both sides stay intact — the
   # session-start bootstrap detects the divergence and routes it to the
-  # interactive git-conflict flow (skills/git-conflict, context section)
+  # interactive git-conflict flow (harness/skills/git-conflict, context section)
   if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
     git rebase --abort >/dev/null 2>&1 || true
   fi
