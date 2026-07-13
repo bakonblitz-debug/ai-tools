@@ -14,3 +14,7 @@ Thumbs.db
 # Hermes 5-phase operating doc — lives here for durability/discoverability,
 # but stays out of git per his call (2026-07-04)
 harness/hermes-harness-2026-07-02.md
+
+# context/memory live in the private ai-tools-context repo, not here
+harness/context/
+harness/memory/
