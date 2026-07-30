@@ -19,15 +19,26 @@ CTX="${1:?usage: sync-memory.sh /path/to/context-repo}"
 if [ ! -t 0 ] && { [ -p /dev/stdin ] || [ -f /dev/stdin ]; }; then
   INPUT="$(cat 2>/dev/null || true)"
   if printf '%s' "$INPUT" | grep -q '"tool_input"'; then
-    # match a context/ or memory/ path segment (/ or JSON-escaped \\ separator)
-    printf '%s' "$INPUT" | grep -Eq '(^|/|\\)(context|memory)/' || exit 0
+    # match a context/ or memory/ path segment. Both separators must be accepted
+    # on BOTH sides: Windows sends backslash paths (M:\context\memory\x.md, which
+    # arrives JSON-escaped as \\), and requiring a forward slash after the segment
+    # made this filter never match on Windows — so the PostToolUse hook silently
+    # no-op'd there while the Stop hook (no tool_input) masked it. Found 2026-07-30.
+    printf '%s' "$INPUT" | grep -Eq '(^|/|\\)(context|memory)(/|\\)' || exit 0
   fi
 fi
 
 cd "$CTX" || exit 0
+# SYNC_HOST_LABEL overrides the commit label. Needed when a machine drives this
+# script on another machine over ssh — the Windows PC does, because git cannot
+# write objects into a repo on the Mac's SMB share (macOS refuses to rename
+# git's read-only 0444 temp objects), so its hooks run this here via `ssh mac`.
+# Without the override every such commit would be labelled with the Mac's
+# hostname and the tree would lose track of which machine authored what.
+HOST_LABEL="${SYNC_HOST_LABEL:-$(hostname)}"
 if [ -n "$(git status --porcelain -- memory context)" ]; then
   git add -- memory context
-  git commit --quiet -m "context/memory sync from $(hostname)" || true
+  git commit --quiet -m "context/memory sync from $HOST_LABEL" || true
 fi
 
 # Offline (e.g. GitHub account suspended): commit locally, skip network so the
