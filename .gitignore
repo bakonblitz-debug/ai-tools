@@ -18,3 +18,4 @@ harness/hermes-harness-2026-07-02.md
 # context/memory live in the private ai-tools-context repo, not here
 harness/context/
 harness/memory/
+*.bak

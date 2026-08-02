@@ -19,6 +19,6 @@ The `ai-tools` repo (`~/www/ai-tools` on the Mac) carries Isaac's cross-machine 
 
 ## Rules
 
-- Commits to this repo use Isaac's **personal** identity (`isaacbacon1+github@gmail.com`); the repo has a local `user.email` override — never commit to it with `isaac@simplyphp.com`.
+- Commits to this repo use Isaac's single global identity (`bakonblitzgithub@gmail.com`); verify `git config user.email` before committing — retired identities must never be used.
 - Never read, list, or follow symlinks into `~/ai-restricted/` (or any path resolving there) — real PII, deliberately outside AI reach.
-- Do not write work-confidential SimplyPHP material into this personal tree; record only what Isaac asks to record.
+- Do not write work-confidential client/employer material into this personal tree; record only what Isaac asks to record.

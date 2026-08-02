@@ -20,8 +20,15 @@ description: >
 > **Model:** Switch to `deepseek-r1:14b` before starting (`/model deepseek-r1:14b`).
 > **Verifier (Phase 5):** Use `llama3.3:70b` as the cross-model verifier — different
 > architecture eliminates false consensus. Set:
-> `VERIFIER_CMD = "hermes --model llama3.3:70b -z"`
+> `VERIFIER_CMD = "hermes --provider lmstudio --model llama3.3:70b -z"`
 > Switch back to `qwen2.5:14b` when complete.
+>
+> `--provider lmstudio` is required, not optional: the `ollama` provider alias resolves to
+> `custom`, which carries no credential and fails with `HTTP 401: Missing Authentication
+> header`. The `lmstudio` overlay is the supported local route (`LM_BASE_URL`, `LM_API_KEY`).
+> Passing it explicitly does **not** override an install's configured `base_url` — verified
+> 2026-08-01 against both the WSL install (config `base_url` wins) and the Windows install
+> (env `LM_BASE_URL` wins).
 
 Two isolated agents refine a single plan by attacking it until neither has anything left to add, fix, or challenge and both agree it is sound. The converged plan is then handed to an independent verifier — ideally a *different model* — that certifies it before it is called proven. The plan is the snake's body; each round eats the previous round's debate and leaves only the refined artifact.
 
