@@ -25,8 +25,39 @@ tiered-model pipeline sized for his actual hardware and workflow.
 - **`coding-standards.md`** (this directory) — the canonical security,
   privacy, and development floor. Every tier works to it, and so does every
   agent outside the pipeline.
-- **`context/`** (this directory) — the shared, git-tracked context tree all
-  agents orient from and write back to. Start at `context/CONTEXT.md`.
+- **The context tree** — the shared, git-tracked source of truth all agents
+  orient from and write back to. It lives in a **separate private repo**
+  (`/mnt/www/context/`), never in this public one: it accumulates real PII.
+  Start at `/mnt/www/context/ORIENT.md`, then `/mnt/www/context/context/CONTEXT.md`.
+
+  `harness/context/` and `harness/memory/` are the **in-repo access point** for
+  agents scoped to `ai-tools` alone rather than the whole `www` tree — Cowork is
+  the case that motivated it (see the context tree's
+  `workspace/cowork-direct-access-*.md`; its folder is exposed over FUSE, so it
+  cannot reach `../../context`). They are gitignored so the private tree never
+  lands in this public repo.
+
+  **Per-machine setup — required, and gitignored so it does not travel.** They are
+  *relative* symlinks into the private repo. Relative, not absolute, so the same
+  link resolves on the Mac (`~/www`), in WSL (`/mnt/www`) and on the PC (`M:\`):
+
+  ```
+  cd <repo>/harness && ln -s ../../context/context context && ln -s ../../context/memory memory
+  ```
+
+  Verify with `ls -l harness/context/CONTEXT.md` — it must resolve, and its date
+  must match the live tree. If it is a real directory rather than a symlink, it is
+  a stale copy: a frozen 2026-07-13 one was found here on 2026-08-03 still naming
+  the old `BakonBlitz/ai-tools` repo and telling agents to commit as the retired,
+  suspended `isaacbacon1+github@gmail.com`. A stale copy here is worse than nothing,
+  because it produces exactly the identity mistake the hard rules forbid.
+
+  **A symlink only works where the agent's confinement is conventional.** It does
+  not cross an *enforced* boundary — a symlink out of a FUSE-exposed folder resolves
+  outside the mount and fails. Hermes already has all of `/mnt/www` mounted, so it
+  needs a pointer (`hermes-AGENTS.md`), not a symlink. Cowork is FUSE-confined, so
+  whether this works for it is an empirical question: check that it can read
+  `harness/context/CONTEXT.md` and see today's content before trusting it.
 - **`/mnt/www/safe-agentic-workflow/`** — a cloned reference repo (11-role
   SAFe team-coordination template, Linear tickets, PR gates). Read-only. A
   few portable ideas were mined from it into `harness.md` (hand-off tags,
@@ -49,7 +80,20 @@ tiered-model pipeline sized for his actual hardware and workflow.
     ├── harness.md                — the actual tiered-delegation design
     ├── coding-standards.md       — canonical security/privacy/dev floor
     ├── hermes-harness-2026-07-02.md — Hermes' 5-phase operating mode (gitignored)
-    ├── context/                  — shared context tree (see context/CONTEXT.md)
+    ├── scripts/
+    │   ├── claude-bootstrap.sh   — Claude Code SessionStart hook: pulls the
+    │   │                           context repo, then prints its ORIENT.md so
+    │   │                           the session starts oriented. Takes the
+    │   │                           context-repo path as its one argument, and
+    │   │                           REQUIRES an ORIENT.md at that repo's root —
+    │   │                           without one it exits silently and every
+    │   │                           session starts blind.
+    │   ├── sync-memory.sh        — commit+push context/memory written via Bash
+    │   └── plan-mindset.sh       — UserPromptSubmit hook, plan-tier only
+    ├── hermes-AGENTS.md          — copy to ~/.hermes/.hermes/AGENTS.md. Hermes
+    │                               has no SessionStart hook, so this is the only
+    │                               file it reads every session; it does the
+    │                               orienting by pointing.
     ├── templates/
     │   ├── task-spec-template.md
     │   └── spike-template.md

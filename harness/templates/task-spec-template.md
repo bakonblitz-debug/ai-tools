@@ -23,5 +23,13 @@
 <the minimal-but-sufficient facts Worker needs — Worker has zero conversation
 history from any prior tier, this section IS the context, not a pointer to it>
 
+## Ponytail
+- **Stop at rung:** <which rung of the ladder this task should stop at, and why —
+  e.g. "rung 3, stdlib `Intl.Collator` covers it; do not write a comparator">
+- **Already exists, reuse it:** <named file/export the Worker must call instead of writing its own>
+- **Do NOT build:** <the abstraction/config/interface a Worker typically reaches for here and must not>
+- **Ceiling to mark:** <if a deliberate shortcut is correct, the `ponytail:` comment it must leave
+  behind, naming the ceiling and the upgrade path>
+
 ## Out of Scope
 <explicitly excluded work>
