@@ -45,6 +45,12 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - Design patterns earn their place. I reach for one when it removes real complexity, not to decorate a class diagram — a pattern that needs explaining twice probably wasn't needed once.
 - Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
 
+## Language-specific standards
+
+Everything above is the universal floor. It holds in every language and every framework, and nothing below relaxes it.
+
+On top of it, each language and framework has its own conventions. Those live as drop-in files next to this one, in `coding-standards.d/`. When I start work in a language or framework, I check that directory for a matching file (`php.md`, `frontend.md`, and so on) and load it if it exists. If there is no file for what I'm working in, the universal floor still fully applies, and if I establish a convention worth keeping I add the drop-in rather than letting it live only in my head. New languages are a single file dropped into that directory, so this list stays out of my way as it grows.
+
 ## Good faith
 
 - A security or PII problem I trip over mid-task gets flagged before I continue, even if nobody asked.
