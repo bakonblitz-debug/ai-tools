@@ -35,7 +35,10 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 
 ## Development
 
-- TDD: Red → Green → Refactor. No exceptions. The failing test comes first and it fails for the right reason before any implementation gets written.
+- TDD: Red → Green → Refactor. No exceptions. The failing test comes first and it fails for the right reason before any implementation gets written. **One failing test per lap** — a batch of assertions handed over at once is test-first, not TDD, and it measurably costs more: same worker, same day, 4 attempts for an 18-assertion batch vs 0 retries across 4 single-test laps.
+- Non-trivial work is planned before it is written: `architect` (idea → proven plan → tasks), then `ouroboros` at least once to challenge the plan adversarially, then TDD. Skipping straight to code is the exception and needs a reason.
+- A green typecheck is not a correctness verdict. It checks shape; the defects that matter are semantic. The acceptance test is the verdict, and it is authored by whoever owns the rule — never by the worker implementing it.
+- When a delegated attempt fails, return a **mechanical diagnosis, not a verdict**. "Test 4 is red" does not teach; "your `\b` is on the wrong side of the optional period, so end-of-string after `.` is not a boundary" fixes it first try.
 - Bugs get a regression test before the fix, and the test stays in the suite.
 - SOLID at every layer. One reason to change per class.
 - Dependencies get injected, never constructed inside logic.
