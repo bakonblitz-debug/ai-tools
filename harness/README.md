@@ -27,11 +27,26 @@ tiered-model pipeline sized for his actual hardware and workflow.
   agent outside the pipeline.
 - **The context tree** — the shared, git-tracked source of truth all agents
   orient from and write back to. It lives in a **separate private repo**
-  (`/mnt/www/context/`), never here: it accumulates real PII, and this repo is
-  public. Start at `/mnt/www/context/ORIENT.md`, then
-  `/mnt/www/context/context/CONTEXT.md`.
-  `harness/context/` and `harness/memory/` are gitignored local shadows left
-  over from before the split — stale, no `CONTEXT.md`, do not read them.
+  (`/mnt/www/context/`), never in this public one: it accumulates real PII.
+  Start at `/mnt/www/context/ORIENT.md`, then `/mnt/www/context/context/CONTEXT.md`.
+
+  `harness/context/` and `harness/memory/` are the **in-repo access point** for
+  agents scoped to `ai-tools` alone rather than the whole `www` tree — Cowork is
+  the case that motivated it (see the context tree's
+  `workspace/cowork-direct-access-*.md`; its folder is exposed over FUSE, so it
+  cannot reach `../../context`). They are gitignored so the private tree never
+  lands in this public repo.
+
+  **Both are currently BROKEN and must not be read.** They are real directories
+  holding a frozen 2026-07-13 copy, not the intended live view. The copy names the
+  old repo (`BakonBlitz/ai-tools`) and tells agents to commit as the retired,
+  suspended `isaacbacon1+github@gmail.com` — so orienting from it produces exactly
+  the identity mistake the hard rules forbid. Fix before relying on either.
+
+  Note a symlink only solves this where the agent's confinement is conventional.
+  It does not cross an *enforced* boundary: a symlink out of a FUSE-exposed folder
+  resolves to a path outside the mount and fails. Hermes has all of `/mnt/www`
+  mounted already, so it needs a pointer, not a symlink.
 - **`/mnt/www/safe-agentic-workflow/`** — a cloned reference repo (11-role
   SAFe team-coordination template, Linear tickets, PR gates). Read-only. A
   few portable ideas were mined from it into `harness.md` (hand-off tags,
