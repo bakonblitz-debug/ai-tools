@@ -25,8 +25,13 @@ tiered-model pipeline sized for his actual hardware and workflow.
 - **`coding-standards.md`** (this directory) — the canonical security,
   privacy, and development floor. Every tier works to it, and so does every
   agent outside the pipeline.
-- **`context/`** (this directory) — the shared, git-tracked context tree all
-  agents orient from and write back to. Start at `context/CONTEXT.md`.
+- **The context tree** — the shared, git-tracked source of truth all agents
+  orient from and write back to. It lives in a **separate private repo**
+  (`/mnt/www/context/`), never here: it accumulates real PII, and this repo is
+  public. Start at `/mnt/www/context/ORIENT.md`, then
+  `/mnt/www/context/context/CONTEXT.md`.
+  `harness/context/` and `harness/memory/` are gitignored local shadows left
+  over from before the split — stale, no `CONTEXT.md`, do not read them.
 - **`/mnt/www/safe-agentic-workflow/`** — a cloned reference repo (11-role
   SAFe team-coordination template, Linear tickets, PR gates). Read-only. A
   few portable ideas were mined from it into `harness.md` (hand-off tags,
@@ -49,7 +54,20 @@ tiered-model pipeline sized for his actual hardware and workflow.
     ├── harness.md                — the actual tiered-delegation design
     ├── coding-standards.md       — canonical security/privacy/dev floor
     ├── hermes-harness-2026-07-02.md — Hermes' 5-phase operating mode (gitignored)
-    ├── context/                  — shared context tree (see context/CONTEXT.md)
+    ├── scripts/
+    │   ├── claude-bootstrap.sh   — Claude Code SessionStart hook: pulls the
+    │   │                           context repo, then prints its ORIENT.md so
+    │   │                           the session starts oriented. Takes the
+    │   │                           context-repo path as its one argument, and
+    │   │                           REQUIRES an ORIENT.md at that repo's root —
+    │   │                           without one it exits silently and every
+    │   │                           session starts blind.
+    │   ├── sync-memory.sh        — commit+push context/memory written via Bash
+    │   └── plan-mindset.sh       — UserPromptSubmit hook, plan-tier only
+    ├── hermes-AGENTS.md          — copy to ~/.hermes/.hermes/AGENTS.md. Hermes
+    │                               has no SessionStart hook, so this is the only
+    │                               file it reads every session; it does the
+    │                               orienting by pointing.
     ├── templates/
     │   ├── task-spec-template.md
     │   └── spike-template.md
