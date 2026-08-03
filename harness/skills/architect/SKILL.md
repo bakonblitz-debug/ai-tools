@@ -1,23 +1,44 @@
 ---
 name: architect
 description: >
-  End-to-end planning pipeline that takes a rough idea to a vetted, task-broken implementation
-  plan by running a tiered delegation pipeline: Research (Fable, via a claude CLI subprocess) →
-  Plan (Opus, via a claude CLI subprocess invoking superpowers:brainstorming) → ouroboros
-  (adversarially prove and certify that plan, unchanged) → Task-Decompose (Sonnet, via a claude
-  CLI subprocess invoking superpowers:write-plan) → Worker (local devstral:65k, one delegate_task
-  per task spec, gated by the Worker Output Gate before being marked done). A fifth jira-ticket
-  phase (file the plan as a ticket) ships dormant in this build — enable it per the skill body if
-  you have Jira. Use when you want the WHOLE cycle in one guided flow. Trigger on:
-  full planning pipeline, take my idea to a proven task list, research then plan then prove then
-  break it down then build it, run the whole tiered delegation flow, end-to-end planning from idea
-  to shipped tasks. Do NOT trigger on a bare "plan X" / "design X" / "architect X" — for proving an
-  existing plan use the ouroboros skill directly, and for a single research pass alone just ask for
-  research. Architect is a thin conductor that sequences these tiers and gates between them; each
-  tier it calls also works standalone without it.
+  THE default entry point for any coding or project work — ours or a client's. Takes an idea or a
+  change request through Ground → Plan → ouroboros (adversarial challenge, at least one round) →
+  Task-Decompose → TDD implementation, gating between each. Use it for creating a new project,
+  changing an existing one, adding a feature, fixing a bug, refactoring, or altering behaviour —
+  **including small changes**; the size of the diff does not lower the bar, and "it's just a small
+  fix" is exactly where unreviewed assumptions ship. Trigger on: new project, start a project, set
+  up a repo, build X, add a feature, implement X, change X, update the app, modify behaviour, fix
+  this bug, refactor X, plan X, design X, architect X, take my idea to a task list, full planning
+  pipeline. Prefer this over answering a build/change request directly. The only things that skip
+  it are pure reads (explain this, what does X do, find where Y happens), one-line typo and
+  formatting edits with no behavioural change, and work the user has explicitly told you to do
+  without planning. If a step genuinely does not apply, say which one and why — do not silently
+  drop it. Each tier also works standalone; architect is the conductor that sequences and gates.
 ---
 
 # Architect — Idea → Proven Plan → Tasks → Shipped Work
+
+## Current wiring — read this before running the pipeline
+
+**Corrected 2026-08-02.** The tier table below still describes the original five-tier design. Two of
+those tiers cannot run as written on this install, so the pipeline that actually executes today is:
+
+| Tier | Original | Actual today |
+|---|---|---|
+| Research | Fable via `claude` CLI subprocess | **Shelved 2026-07-05** — Claude subprocess tiers were dropped in favour of Claude Code planning directly and handing work over as files on the share |
+| Plan | Opus subprocess → `superpowers:brainstorming` | **`superpowers` is disabled.** Plan directly, or use the intake questions in `ouroboros`'s Requirements section |
+| **ouroboros** | adversarial prove + certify | **Works. Mandatory — at least one round.** |
+| Task-Decompose | Sonnet subprocess → `superpowers:write-plan` | **`superpowers` is disabled.** Decompose directly into `templates/task-spec-template.md` |
+| Worker | local `devstral:65k` via `delegate_task` | **Works** — or reach Ollama directly over the LAN when the `hermes` CLI is not available |
+
+**Non-negotiable regardless of tier availability:** ouroboros runs at least once before code is
+written, and implementation is TDD with **one failing test per lap** (`coding-standards.md`). If a tier
+is unavailable, do that tier's job inline and say so — never skip the gate because its tool is missing.
+
+**Do not switch the worker to any qwen model.** `config/delegation.yaml` forbids it (hallucinated tool
+calls). Note `skills/tdd/SKILL.md` currently says to switch to `qwen2.5:32b`; that is stale and the
+delegation config wins.
+
 
 > **Model:** Switch to `deepseek-r1:32b-65k` before starting (`/model deepseek-r1:32b-65k`) —
 > matches this skill's existing ouroboros-loop role; it is the fleet's planning/architecture/
