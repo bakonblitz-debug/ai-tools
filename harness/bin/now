@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# now — current date/time in the forms this workspace uses, and how old a date is.
+#
+# Exists because "is that posting recent?" came up constantly and I was doing the
+# arithmetic in my head against a date that had itself gone stale mid-session.
+# BSD date on macOS has no "days between", so this is not something `date` alone
+# answers.
+#
+#   now                       what time is it, in every form used around here
+#   now 2026-08-11 ...        how long ago each date was (accepts ISO stamps too)
+#
+# `~/.zshenv` already puts harness/bin on PATH, so this is callable as `now`.
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+  printf 'local    %s\n' "$(date '+%Y-%m-%d %H:%M %Z  (%A)')"
+  printf 'utc      %s\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
+  printf 'iso      %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  # jobhunt parses this out of a capture filename with Date.UTC(), so the stamp
+  # in a fixture name is UTC, NOT local. Getting that wrong silently shifts
+  # discovered_at by the timezone offset.
+  printf 'capture  %s   <- fixtures/raw/<source>-THIS-<slug>.json  (UTC)\n' "$(date -u '+%Y%m%dT%H%M')"
+  exit 0
+fi
+
+now_s=$(date '+%s')
+for arg in "$@"; do
+  day="${arg%%T*}"                       # tolerate a full ISO stamp
+  if ! then_s=$(date -j -f '%Y-%m-%d' "$day" '+%s' 2>/dev/null); then
+    printf '%-12s  unparseable — want YYYY-MM-DD or an ISO stamp\n' "$arg"
+    continue
+  fi
+
+  days=$(( (now_s - then_s) / 86400 ))
+  if   [ "$days" -lt 0 ]; then word="in the FUTURE by $(( -days )) days"
+  elif [ "$days" -eq 0 ]; then word="today"
+  elif [ "$days" -eq 1 ]; then word="1 day ago"
+  else                         word="$days days ago"
+  fi
+  printf '%-12s  %s\n' "$day" "$word"
+done
