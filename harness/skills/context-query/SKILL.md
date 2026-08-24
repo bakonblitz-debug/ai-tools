@@ -1,14 +1,14 @@
 ---
 name: context-query
 description: >
-  Use this skill for any question about *which* files in the context tree are
-  newest, most recent, latest, or dated on/after some date — "the last 5
-  entries", "what changed since the 23rd", "recent work on X". Leaf files are
-  named <slug>-<epoch>-<YYYYMMDD>.md, so the date is in the FILENAME and these
-  questions are a sort over names, never a search through file contents.
-  Trigger on: latest, most recent, last N, newest, since <date>, up to date,
+  Latest / newest / most recent context files, or anything since a date.
+  The index truncates this line around 60 characters, so everything above
+  this point is what actually reaches the model — keep the triggers first.
+  Leaf files are named <slug>-<epoch>-<YYYYMMDD>.md, so the date lives in the
+  FILENAME: these questions are a sort over names, never a search through file
+  contents. Trigger on: latest, most recent, last N, newest, since <date>,
   what's new, recent notes. Do NOT grep file bodies for a date string — the
-  dates are not written in the prose, and every format you guess will return
+  dates are not written in the prose, and every format you guess returns
   nothing.
 ---
 
