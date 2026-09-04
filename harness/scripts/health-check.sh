@@ -38,6 +38,15 @@ case "$(uname -s)" in
          else SYSTEM=Linux; WWW=$HOME/www; fi ;;
   *)                    SYSTEM=$(uname -s); WWW=$HOME/www ;;
 esac
+# Configuration. Two knobs, and for each one it matters whether the user ASKED for a
+# value or just got the default: "you pointed me somewhere that is not there" is a
+# failure, "you never mentioned a workspace" is simply an unconfigured optional piece.
+# Conflating those is what made a fresh clone report three FAILs it could do nothing
+# about. Workspace root: --root PATH. Remote: REMOTE_HOST (was hardcoded `mac`).
+WWW_EXPLICIT=0
+REMOTE_EXPLICIT=${REMOTE_HOST:+1}; REMOTE_EXPLICIT=${REMOTE_EXPLICIT:-0}
+REMOTE_HOST=${REMOTE_HOST:-mac}
+
 # Resolve siblings relative to THIS file, not to the detected workspace. These scripts
 # ship together, so a clone can test itself; keying off $WWW made a fresh clone report
 # "session-todo.sh missing" while it sat in the same directory.
@@ -59,20 +68,28 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # ==================================================================================
 
 check_workspace_mounted() {
-  [ -d "$WWW/context/context" ] || { echo "no tree at $WWW/context/context"; return 1; }
+  if [ ! -d "$WWW/context/context" ]; then
+    # Explicitly pointed somewhere that is not there = broken. Auto-detected default
+    # that does not exist = simply not configured, which is the normal state for a
+    # new install and must not fail the run.
+    [ "$WWW_EXPLICIT" = 1 ] && { echo "no tree at $WWW/context/context"; return 1; }
+    echo "no context tree (optional) — point at one with --root PATH"; return 77
+  fi
   echo "$SYSTEM → $WWW"
 }
 
-check_mac_reachable() {
+check_remote_reachable() {
   have ssh || { echo "no ssh client"; return 77; }
-  [ "$SYSTEM" = Mac ] && { echo "running on the Mac"; return 0; }
-  ssh -o BatchMode=yes -o ConnectTimeout=8 mac true 2>/dev/null \
-    || { echo "ssh mac failed — git for the share runs there, so commits are blocked"; return 1; }
-  echo "ssh mac ok"
+  [ "$SYSTEM" = Mac ] && { echo "running on the remote itself"; return 0; }
+  ssh -o BatchMode=yes -o ConnectTimeout=8 "$REMOTE_HOST" true 2>/dev/null     && { echo "ssh $REMOTE_HOST ok"; return 0; }
+  # Unreachable is only a failure if a remote was actually requested. A single-machine
+  # setup has none, and must not be told its git is broken.
+  [ "$REMOTE_EXPLICIT" = 1 ]     && { echo "ssh $REMOTE_HOST failed — git for the share runs there, so commits are blocked"; return 1; }
+  echo "no remote configured (optional) — set REMOTE_HOST to enable"; return 77
 }
 
 check_digest_selftest() {
-  [ -x "$SCRIPTS/session-todo.sh" ] || { echo "session-todo.sh missing"; return 1; }
+  [ -f "$SCRIPTS/session-todo.sh" ] || { echo "session-todo.sh missing"; return 1; }
   out=$(bash "$SCRIPTS/session-todo.sh" --selftest 2>&1) \
     || { echo "${out:-selftest failed}"; return 1; }
   echo "$out"
@@ -92,8 +109,8 @@ check_digest_agreement() {
     there=$(wsl_ "bash /mnt/www/ai-tools/harness/scripts/session-todo.sh" | sed -n '1s/.*— \([0-9]*\) items.*/\1/p')
     [ -n "$there" ] && n="$n WSL2=$there"
   fi
-  if [ "$SYSTEM" != Mac ] && ssh -o BatchMode=yes -o ConnectTimeout=8 mac true 2>/dev/null; then
-    there=$(ssh mac 'bash ~/www/ai-tools/harness/scripts/session-todo.sh' 2>/dev/null | sed -n '1s/.*— \([0-9]*\) items.*/\1/p')
+  if [ "$SYSTEM" != Mac ] && ssh -o BatchMode=yes -o ConnectTimeout=8 "$REMOTE_HOST" true 2>/dev/null; then
+    there=$(ssh "$REMOTE_HOST" 'bash ~/www/ai-tools/harness/scripts/session-todo.sh' 2>/dev/null | sed -n '1s/.*— \([0-9]*\) items.*/\1/p')
     [ -n "$there" ] && n="$n Mac=$there"
   fi
 
@@ -115,9 +132,9 @@ check_digest_agreement() {
 check_context_synced() {
   have ssh || { echo "no ssh client"; return 77; }
   local dirty ahead
-  dirty=$(ssh -o BatchMode=yes -o ConnectTimeout=8 mac 'cd ~/www/context && git status --porcelain | wc -l' 2>/dev/null | tr -d ' ')
+  dirty=$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$REMOTE_HOST" 'cd ~/www/context && git status --porcelain | wc -l' 2>/dev/null | tr -d ' ')
   [ -n "$dirty" ] || { echo "could not reach the context repo on the Mac"; return 77; }
-  ahead=$(ssh mac 'cd ~/www/context && git rev-list --count @{u}..HEAD 2>/dev/null' 2>/dev/null | tr -d ' ')
+  ahead=$(ssh "$REMOTE_HOST" 'cd ~/www/context && git rev-list --count @{u}..HEAD 2>/dev/null' 2>/dev/null | tr -d ' ')
   [ "$dirty" = 0 ] || { echo "$dirty uncommitted file(s) — the sync hook should have caught these"; return 1; }
   [ "${ahead:-0}" = 0 ] || { echo "$ahead commit(s) unpushed — the other machine cannot see them"; return 1; }
   echo "clean and pushed"
@@ -128,7 +145,12 @@ check_context_synced() {
 # ==================================================================================
 VERBOSE=0; FILTER=""
 for a in "$@"; do
-  case $a in -v|--verbose) VERBOSE=1 ;; *) FILTER=$a ;; esac
+  case ${TAKE_ROOT:-} in 1) WWW=$a; WWW_EXPLICIT=1; TAKE_ROOT=0; continue ;; esac
+  case $a in
+    -v|--verbose) VERBOSE=1 ;;
+    --root)       TAKE_ROOT=1 ;;
+    *)            FILTER=$a ;;
+  esac
 done
 
 P=0; F=0; S=0
