@@ -1,7 +1,24 @@
 # Workspace instructions
 
-Copy to `~/.hermes/.hermes/AGENTS.md` on the WSL box. This is the **only** file I read every
-session, so anything not reachable from here does not exist as far as turn 1 is concerned. Claude Code
+> ## ⚠ THIS FILE IS NOT LOADED. Editing it changes nothing.
+>
+> Verified 2026-09-03 by probing a live session's `system_prompt`: unique strings from this file
+> (`One machine at a time`, `Label the shell`) are **absent**. Hermes discovers context files
+> **cwd-only** and only under the names `AGENTS.md` / `CLAUDE.md` / `.cursorrules`
+> (`agent/prompt_builder.py:build_context_files_prompt`). The cwd is `/mnt/www`, which has no
+> `AGENTS.md` — so a copy or symlink at `~/.hermes/.hermes/AGENTS.md` is never read.
+>
+> What Hermes actually loads: **`SOUL.md`** (→ `local-ai-setup/SOUL.md`, git-tracked, no sudo) and
+> **`/mnt/www/CLAUDE.md`** (the cwd context file). Put instructions in those.
+>
+> Rules below that reach Hermes nowhere else — one machine at a time, label the shell, git identity,
+> no `Co-Authored-By` trailers, doc voice — need folding into `SOUL.md`, budget permitting. It is
+> already 25.7 KB of a 32.8 KB prompt against a 24k window.
+>
+> Same class of trap as the August `platform_toolsets` finding: a carefully maintained file that
+> nothing reads. Kept as the staging copy for that fold, not as a live config.
+
+Symlinked to `~/.hermes/.hermes/AGENTS.md` on the WSL box (inert — see above). Claude Code
 gets its orientation injected by a `SessionStart` hook (`claude-bootstrap.sh` → `ORIENT.md`); I have no
 such hook, so this file has to do that job by pointing.
 
@@ -10,15 +27,26 @@ token here is spent on every session.
 
 ---
 
-## 1. Orient before answering anything non-trivial
+## 1. Answer the question that was asked
 
-A question asked cold gets a cold answer. Before any substantive reply about this workspace, read:
+**Reading is not answering.** A turn spent orienting and then stopping is a failed turn, and it is my
+most common failure: measured 2026-09-03, ten trials out of ten of a one-line question were lost to
+reading context files and summarising them instead of replying.
 
-1. `/mnt/www/context/ORIENT.md` — the workspace map and the sync rules. Start here.
-2. `/mnt/www/context/context/CONTEXT.md` — the git-tracked context tree, canonical and cross-machine.
+So: if the question can be answered directly, or with one tool call, I do that and stop. A literal
+instruction — "reply with exactly X", "list the filenames", "answer in one line" — **is** the whole
+task. I do it and stop, and I do not infer a larger job from the surrounding context.
+
+Orient only before substantive work on this workspace: planning, building, changing code, or a
+question about past decisions I cannot answer by looking directly. Then read only as far as I need:
+
+1. `/mnt/www/context/context/CONTEXT.md` — the git-tracked context tree, canonical and cross-machine.
+   Note the **doubled `context`**: `/mnt/www/context` is the repo, `/mnt/www/context/context` is the
+   tree. `/mnt/www/context/CONTEXT.md` does not exist and I keep reaching for it by mistake.
    Top index → per-project folders → feature folders → issue files. Drill into the relevant folder;
    do not read the whole tree.
-3. `/mnt/www/CLAUDE.md` — the shared entrypoint both machines load.
+2. `/mnt/www/context/ORIENT.md` — the workspace map and the sync rules, if step 1 was not enough.
+3. `/mnt/www/CLAUDE.md` — the shared entrypoint both machines load, if I am about to change code.
 
 **The context tree lives ONLY in `/mnt/www/context/`.** `ai-tools/harness/context/` and
 `ai-tools/harness/memory/` are stale local shadows, gitignored, and carry no `CONTEXT.md` — anything
@@ -46,7 +74,9 @@ never by the worker implementing it.
 
 ## 3. Delegation
 
-`devstral:65k` over the LAN, **one worker at a time**. **Never a qwen model as a worker** —
+`devstral:24k` over the LAN, **one worker at a time**. The 24k variant is deliberate — 65k needs a
+10.27 GB KV cache on top of 14 GB of weights, more than the card has, and silently runs partly on
+CPU. **Never a qwen model as a worker** —
 `config/delegation.yaml` forbids it (hallucinated tool calls); `skills/tdd/SKILL.md` still says to
 switch to `qwen2.5:32b` and that line is stale.
 
