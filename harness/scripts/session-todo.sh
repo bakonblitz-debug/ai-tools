@@ -8,7 +8,8 @@
 #   session-todo.sh --selftest            assert-based self-check, no workspace needed
 #
 # Sources, in reliability order (see <root>/.plans/handoff-session-start-todo.md):
-#   1. HANDOFF.md      QUEUED / BLOCKED item headings — already structured
+#   1. HANDOFF.md      QUEUED / BLOCKED item headings. RETIRED 2026-09-04 — the file is now a
+#                      tombstone and matches nothing. Kept so a revived queue would still be read.
 #   2. leaf "## Still open" / "## What is left to do" / "## [N.] Open …" sections.
 #      "… before a/any call" is excluded: rehearsal notes, not work anyone owes today
 #   3. TODO/*.md       aggregated to one line per file, never expanded per checkbox
@@ -20,7 +21,10 @@
 # reading them today yields 76 false items. See .plans/checkbox-reconciliation-proposal.md.
 set -u
 
-MAX=${TODO_MAX:-15}
+# ponytail: oldest-first means the cap truncates the NEWEST items, so keep it above the real
+# count rather than at it. 20 is the plan.s own sanity ceiling — past that the filter is wrong,
+# not the workspace, and the "+N more" tail is the signal to go look at why.
+MAX=${TODO_MAX:-20}
 
 # --- one line per file with an open section: "<age>\t<path>\t<section> (<n>)" ---
 # ponytail: age comes from the <slug>-<epoch>-<date>.md filename, so files predating
@@ -124,12 +128,17 @@ selftest() {
   [ "$(printf '%s\n' "$s" | grep -c .)" -eq 1 ] ||
     { echo "FAIL: the corrected line came back as a false positive:"; echo "$s"; exit 1; }
 
-  # --close flips exactly one line and refuses anything else
-  printf -- '- [ ] one\n- [ ] two\n' > "$t/idx.md"
+  # --close MOVES exactly one line into COMPLETED.md beside the index and refuses anything else.
+  # The move is the whole point: nothing may be lost, and the index must shrink by exactly one line.
+  printf -- '- [ ] one\n- [ ] two\n- [ ] three\n' > "$t/idx.md"
   close_line "$t/idx.md" 2 >/dev/null
-  [ "$(sed -n 2p "$t/idx.md")" = "- [x] two" ] || { echo "FAIL: --close did not check line 2"; exit 1; }
-  [ "$(sed -n 1p "$t/idx.md")" = "- [ ] one" ] || { echo "FAIL: --close touched line 1"; exit 1; }
-  close_line "$t/idx.md" 2 >/dev/null 2>&1 && { echo "FAIL: --close re-closed a closed line"; exit 1; }
+  [ "$(grep -c . "$t/idx.md")" -eq 2 ] || { echo "FAIL: --close did not remove the line"; exit 1; }
+  grep -q 'two' "$t/idx.md" && { echo "FAIL: the closed line is still in the index"; exit 1; }
+  grep -q 'two' "$t/COMPLETED.md" || { echo "FAIL: the closed line did not reach COMPLETED.md"; exit 1; }
+  grep -q '\[ \]' "$t/COMPLETED.md" && { echo "FAIL: the checkbox should be dropped on archive"; exit 1; }
+  [ "$(sed -n 1p "$t/idx.md")" = "- [ ] one" ] || { echo "FAIL: --close touched a neighbour"; exit 1; }
+  [ "$(sed -n 2p "$t/idx.md")" = "- [ ] three" ] || { echo "FAIL: --close touched a neighbour"; exit 1; }
+  close_line "$t/idx.md" 9 >/dev/null 2>&1 && { echo "FAIL: --close accepted a nonexistent line"; exit 1; }
 
   # the mount guard: a workspace that is not there must fail LOUDLY. An empty digest
   # and "nothing is open" are indistinguishable to a reader, which is the one failure
@@ -140,14 +149,30 @@ selftest() {
   echo "selftest OK"
 }
 
+# Closing MOVES the line out of CONTEXT.md into COMPLETED.md beside it, rather than marking it.
+# Membership is the state: a marker can drift from reality (this whole tool exists because 76 of
+# them did), a file boundary cannot, because moving the line IS the update. It also keeps the index
+# a list of live work, which is the thing agents read to orient.
 close_line() {
   f=$1; n=$2
-  case $(sed -n "${n}p" "$f" 2>/dev/null) in
-    *'- [ ]'*) ;;
-    *) echo "refused: $f:$n is not an unchecked checkbox" >&2; return 1 ;;
+  line=$(sed -n "${n}p" "$f" 2>/dev/null)
+  case $line in
+    *'- ['*']'*) ;;
+    *) echo "refused: $f:$n is not an index line" >&2; return 1 ;;
   esac
-  sed -i.bak "${n}s/- \[ \]/- [x]/" "$f" && rm -f "$f.bak"
-  echo "closed $f:$n"
+  done_file=${f%/*}/COMPLETED.md
+  [ "$done_file" = "$f" ] && done_file=COMPLETED.md
+  [ -e "$done_file" ] || cat > "$done_file" <<HDR
+# Completed — archived out of \`${f##*/}\`
+
+Finished records. They are here so the index next door stays a list of live work; nothing is
+deleted, and a leaf that is linked from here is exactly as readable as one linked from there.
+**Looking for something and not finding it in \`${f##*/}\`? It is in here.**
+
+HDR
+  printf '%s\n' "$line" | sed 's/^\([[:space:]]*-[[:space:]]*\)\[[ x]\] /\1/' >> "$done_file"
+  sed -i.bak "${n}d" "$f" && rm -f "$f.bak"
+  echo "archived $f:$n -> $done_file"
 }
 
 case ${1:-} in
@@ -202,7 +227,10 @@ PLANS=$HOME/.claude/plans
 # outrank prose regardless of age. They carry no filename epoch, which is why they cannot
 # just be sorted in with the rest.
 structured=$(
-  # 1. HANDOFF.md — QUEUED / BLOCKED item headings only; DONE and the usage doc are noise
+  # 1. HANDOFF.md — QUEUED / BLOCKED item headings only; DONE and the usage doc are noise.
+  # Retired 2026-09-04, so this normally yields nothing; .plans/ below replaced it. Its failure
+  # mode is worth remembering: three blocks headed DONE hid unfixed defects for 19 days, because
+  # this grep reads the heading and the heading described the pass, not its findings.
   [ -r "$WWW/HANDOFF.md" ] && grep -nE '^\*\*[0-9]+[a-z]*\..*(QUEUED|BLOCKED)' "$WWW/HANDOFF.md" |
     sed 's/[*_`]//g; s/^\([0-9]*\):/  ?\tHANDOFF.md:\1\t/'
 
@@ -239,10 +267,50 @@ total=$(printf '%s\n' "$items" | grep -c .)
 [ "$total" -eq 0 ] && exit 0
 [ "$MODE" = reconcile ] && MAX=$total
 
-echo "## Still open — $total items (session-todo.sh)"
-echo
-printf '%s\n' "$items" | head -n "$MAX" | awk -F'\t' '{printf "  %-5s %-58s %s\n", $1, $2, $3}'
-[ "$total" -gt "$MAX" ] && echo "  +$((total - MAX)) more — session-todo.sh --reconcile"
+render() {
+  echo "## Still open — $total items (session-todo.sh)"
+  echo
+  printf '%s\n' "$items" | head -n "$1" | awk -F'\t' '{printf "  %-5s %-58s %s\n", $1, $2, $3}'
+  [ "$total" -gt "$1" ] && echo "  +$((total - $1)) more — session-todo.sh --reconcile"
+  return 0
+}
+render "$MAX"
+
+# ACTIVE.md is GENERATED, never hand-edited — the tree stays the only store. It is written on every
+# run (this hook fires at session start on both machines) so it cannot drift from the tree the way a
+# maintained list would. Uncapped, unlike the terminal view: a file is scrolled, not glanced at.
+# Its counterpart COMPLETED.md is the opposite and cannot be generated — "done" is not derivable
+# from the tree, which is why the 2026-09-04 reconciliation needed a human to walk 78 lines. That
+# one is written only by --close, one line at a time.
+if [ "$MODE" = digest ] && [ -w "$WWW" ]; then
+  { echo "# Active — every open item in the workspace"
+    echo
+    echo "**Generated by \`ai-tools/harness/scripts/session-todo.sh\` on $(date '+%Y-%m-%d %H:%M') from"
+    echo "$SYSTEM. Do not hand-edit — it is overwritten on every session start.** Close something by"
+    echo "resolving it in the file named below; finished index lines move to the \`COMPLETED.md\`"
+    echo "beside their \`CONTEXT.md\`."
+    echo
+    echo "$total open items, oldest first."
+    echo
+    # Every row is a LINK, not a path. The whole point of this file is to drill down without
+    # opening an index first, so a row you cannot click is a row that failed at its one job.
+    # Link targets differ by source, hence the four rules: the tree is under context/context/,
+    # .plans/ prints without its dot, HANDOFF.md carries a :line suffix, TODO/ is already root-relative.
+    printf '%s\n' "$items" | awk -F'\t' '
+      { age = $1; p = $2; sec = $3
+        gsub(/^ +| +$/, "", age); gsub(/^ +| +$/, "", p)
+        target = p
+        sub(/:[0-9]+$/, "", target)
+        if (target ~ /^plans\//)            target = "." target
+        else if (target !~ /^(TODO|HANDOFF)/) target = "context/context/" target
+        label = p
+        printf "- **%s** — [%s](%s)  \n  %s\n", (age == "?" ? "undated" : age), label, target, sec
+      }'
+    echo
+    echo "Age comes from the leaf filename (\`<slug>-<epoch>-<date>.md\`); **undated** means the file"
+    echo "predates that convention. The trailing count is how many bullets that open section holds."
+  } > "$WWW/ACTIVE.md" 2>/dev/null || true
+fi
 
 if [ "$MODE" = reconcile ]; then
   # Drift the other way: a hard assertion that something is broken, which nobody
