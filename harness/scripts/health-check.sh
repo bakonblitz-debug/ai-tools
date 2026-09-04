@@ -38,7 +38,10 @@ case "$(uname -s)" in
          else SYSTEM=Linux; WWW=$HOME/www; fi ;;
   *)                    SYSTEM=$(uname -s); WWW=$HOME/www ;;
 esac
-SCRIPTS=$WWW/ai-tools/harness/scripts
+# Resolve siblings relative to THIS file, not to the detected workspace. These scripts
+# ship together, so a clone can test itself; keying off $WWW made a fresh clone report
+# "session-todo.sh missing" while it sat in the same directory.
+SCRIPTS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Capture first and filter after: piping into `grep -v` would make the FUNCTION return
 # grep's status, and grep exits 1 when it filters everything away — exactly what a
