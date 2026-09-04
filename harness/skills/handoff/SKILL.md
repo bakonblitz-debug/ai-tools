@@ -57,9 +57,18 @@ current task's focus is the higher-order goal.
 1. **Name it, don't fork silently.** Tell the user in one sentence what you noticed
    and that you want to hand it off. They should never discover a fork after the
    fact.
-2. **Write the handoff plan** to `~/.claude/plans/handoff-<slug>.md`, where `<slug>`
-   is a short kebab-case summary (e.g. `handoff-null-account-export.md`). Use the
-   template below — it *is* the plan of work the subagent will execute.
+2. **Write the handoff plan** to the **workspace share**, at `<root>/.plans/handoff-<slug>.md`
+   — `~/www/.plans/` on the Mac, `M:\.plans\` on the PC, `/mnt/www/.plans/` from
+   WSL/Hermes. `<slug>` is a short kebab-case summary (e.g.
+   `handoff-null-account-export.md`). Use the template below — it *is* the plan of
+   work the subagent will execute.
+
+   **Not `~/.claude/plans/`.** That directory is machine-local, and the `SessionStart`
+   digest (`harness/scripts/session-todo.sh`) runs on the Mac over ssh — so a handoff
+   written there from the PC never resurfaces anywhere, which defeats the entire point
+   of parking it. The share is visible from all three systems. The digest reads both
+   locations and dedups by filename, so an older plan in `~/.claude/plans/` still shows
+   up; new ones belong on the share.
 3. **Surface it and ask.** Show the user the plan path and a one-line summary, then
    ask whether to spawn the subagent now, hand it off later, or skip. **Wait for the
    go-ahead** — do not spawn unprompted. (The user works in plan mode and reads

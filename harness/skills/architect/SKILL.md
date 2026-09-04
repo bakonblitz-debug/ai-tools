@@ -72,18 +72,41 @@ Phases 1 and 3 below cross this boundary — Hermes (you, running locally) const
 shells out via `claude-code`, and reads back that subprocess's final JSON result. Phase 2
 (ouroboros) does not cross it — it stays entirely inside Hermes' own skill ecosystem, unchanged.
 
-## Jira ticketing — DISABLED in this build
+## Issue tracking — GitHub Issues
 
-This personal build runs **without** Jira integration. Default behavior:
-- **Skip the Step 0 ticket check** — do not ask whether a ticket exists, and use a **five-item**
-  todo (Phases 1–5, see below — was three/four items before the tier split).
-- **Skip the final ticketing phase** — do not file a ticket; the pipeline ends once Worker tasks
-  are built and gated.
+**Corrected 2026-08-30.** This section previously said ticketing was disabled. That was wrong:
+**GitHub Issues is the tracker in active use**, for documenting features and fixes *as they are built
+and as they are found*. The Jira-specific machinery is dormant, but issue tracking itself is not.
 
-The ticket machinery below (the Step 0 ticket check and the final phase) is kept as dormant,
-ready-to-enable reference — good bones. If you move into an org with Atlassian/Jira, turn it on by
-following the Step 0 ticket check and that final phase exactly as written. Until enabled, treat
-those two sections as inert.
+**Default behavior:**
+- **Step 0 — check for an existing issue** in the repo being worked on, and reference it. If the work
+  has no issue and is more than a trivial change, open one first. Use the **six-item** todo (Step 0
+  plus Phases 1–5).
+- **Final phase — file what came out of the build.** Anything discovered and deliberately not fixed
+  in this pass becomes an issue rather than a line in a plan file nobody reads again. This is the
+  half that actually gets skipped, and it is the half that matters: findings surfaced mid-build are
+  the ones most likely to be lost.
+
+**Also file an issue mid-pipeline** whenever a phase turns up something out of scope — a latent bug,
+a missing test, a questionable pattern. That is the same instinct `handoff` covers; an issue is the
+lighter-weight version when the tangent does not warrant its own plan-of-work.
+
+⚠️ **All GitHub work goes through the `gh` CLI. Never drive github.com through browser
+automation** — not Claude-in-Chrome, not a scripted session, not "just once to file one issue". His
+hard rule, 2026-08-30, as an account-safety precaution. `gh` is the official client with token auth
+and is unambiguously legitimate; automating the web UI is the grey area.
+
+`gh` 2.98.0 is installed on the Mac and authenticated as `bakonblitz-debug` with `repo` scope, so
+filing works today. Reach it through the wrapper: `on-mac.sh <project> gh issue create ...`.
+
+If `gh` is ever genuinely unavailable, **prepare the issue text and say plainly that it was not
+filed.** Never claim a filing that did not happen, and never fall back to the browser.
+
+**The Jira machinery below is kept dormant, not deleted** (his call, 2026-08-30). It was written
+against Jira, but the shape is tracker-agnostic — a check at the start, a filing step at the end.
+Moving to an org with Jira, Asana, Linear or Azure Boards means swapping the tool's vocabulary and
+the filing call, not rebuilding the phases. Rewriting that later costs far more than the lines cost
+while inert.
 
 ## Operating mode
 
@@ -93,6 +116,24 @@ plan mode blocks any write outside a single plan file, so Phase 1 alone would st
 ever writes *planning* artifacts itself (Worker is where source gets written, and Worker runs as
 its own delegate_task child, not as this skill's own context), so default mode is safe. Reserve
 plan mode for direct human-driven implementation sessions, not for this pipeline.
+
+### Evidence discipline
+
+**Never speak from assumption when you can speak from evidence.**
+
+The test for whether to look or answer: *can this question be answered by reading the code or
+running a command?* If yes, do that first. If no, ask the user.
+
+- Never answer "does X exist?" without checking.
+- Never answer "what does Y do?" without reading Y.
+
+This binds on every phase but hardest on **Phase 1 (Ground)**, which architect *delegates*.
+Delegating the work does not delegate the standard: state this requirement in the Ground brief, and
+reject findings that assert rather than cite. A grounding pass reporting "the project uses X" with no
+path and no line is not grounding, it is a guess wearing a phase label.
+
+*(Adapted from `second-brain` §29/§241, which carried the language while architect had the gap — it
+delegated grounding without ever stating what grounding must meet.)*
 
 ## Verbosity
 
