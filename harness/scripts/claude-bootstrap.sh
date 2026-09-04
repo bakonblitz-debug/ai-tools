@@ -46,4 +46,10 @@ fi
 
 ORIENT="$CTX/ORIENT.md"
 [ -r "$ORIENT" ] && cat "$ORIENT"
+
+# What is still open across the workspace, oldest first. Reads the tree only; never
+# fatal, never slow (measured ~0.1s on the Mac). See session-todo.sh for the sources
+# and for why the CONTEXT.md "- [ ]" checkboxes are deliberately not one of them.
+DIGEST="$(dirname "$0")/session-todo.sh"
+[ -r "$DIGEST" ] && { echo; bash "$DIGEST" "$(dirname "$CTX")" || true; }
 exit 0

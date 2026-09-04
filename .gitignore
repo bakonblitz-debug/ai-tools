@@ -16,6 +16,10 @@ Thumbs.db
 harness/hermes-harness-2026-07-02.md
 
 # context/memory live in the private ai-tools-context repo, not here
-harness/context/
-harness/memory/
+# Not `harness/context/` with a trailing slash: that matches directories only,
+# and these are symlinks into the private context repo (blobs to git). Without
+# the slash both forms stay ignored. They must NOT be committed - a symlink
+# checked out on Windows materialises as a text file containing its target path.
+harness/context
+harness/memory
 *.bak
