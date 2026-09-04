@@ -101,7 +101,10 @@ check_digest_selftest() {
 # leaking into a shared digest — all real, all otherwise silent.
 check_digest_agreement() {
   local here there n
-  here=$(bash "$SCRIPTS/session-todo.sh" 2>/dev/null | sed -n '1s/.*— \([0-9]*\) items.*/\1/p')
+  # Nothing to cross-check without a tree, and "no count" would otherwise read as a
+  # disagreement between machines rather than as an absent optional piece.
+  [ -d "$WWW/context/context" ] || { echo "no workspace to compare"; return 77; }
+  here=$(bash "$SCRIPTS/session-todo.sh" "$WWW" 2>/dev/null | sed -n '1s/.*— \([0-9]*\) items.*/\1/p')
   [ -n "$here" ] || { echo "digest produced no count on $SYSTEM"; return 1; }
   n="$SYSTEM=$here"
 
