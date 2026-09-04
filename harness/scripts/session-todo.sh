@@ -26,7 +26,13 @@ MAX=${TODO_MAX:-15}
 # ponytail: age comes from the <slug>-<epoch>-<date>.md filename, so files predating
 # that convention print no age. Parse dates out of prose if that ever matters.
 scan_leaves() {
-  find "$1" -name '*.md' -type f 2>/dev/null | LC_ALL=C sort | xargs awk -v now="$(date +%s)" '
+  # career/ is job postings: applications, letters, per-company prep. Their status lives in
+  # jobhunt.db, not here — his call 2026-09-04: postings are not todo items. The termination
+  # dossier is a legal claim, not a posting, so it stays. JobHunt's own features and fixes
+  # live under agentic-apps/ and are unaffected.
+  find "$1" -name '*.md' -type f \
+       ! \( -path '*/career/*' -a ! -path '*/career/simplyphp-termination/*' \) \
+       2>/dev/null | LC_ALL=C sort | xargs awk -v now="$(date +%s)" '
     function flush(   age) {
       if (file == "" || sec == "") return
       age = (epoch > 0) ? int((now - epoch) / 86400) "d" : "  ?"
@@ -90,6 +96,21 @@ selftest() {
   age=${out%%$'\t'*}
   [ "${age%d}" -gt 30 ] 2>/dev/null || { echo "FAIL: age not derived from filename: $age"; exit 1; }
 
+  # career/ is job postings and must not reach the digest at all (his call 2026-09-04),
+  # but the termination dossier lives under career/ and is a legal claim, not a posting.
+  mkdir -p "$t/tree/career/simplyphp-termination"
+  printf '# acme\n\n## Open\n\n- owes an answer\n' > "$t/tree/career/acme-dev-1785467066-20260730.md"
+  printf '# d\n\n## 3. Open actions\n\n- file claim B\n' \
+    > "$t/tree/career/simplyphp-termination/dossier-1785467066-20260730.md"
+  c=$(scan_leaves "$t/tree")
+  case $c in
+    *acme*) echo "FAIL: a job posting reached the digest: $c"; exit 1 ;;
+  esac
+  case $c in
+    *simplyphp-termination/dossier*) ;;
+    *) echo "FAIL: the termination dossier must survive the career/ exclusion: $c"; exit 1 ;;
+  esac
+
   # the real WSL2-HANDOFF §11b shape: an assertion left standing 11 days after the fix.
   # It must NOT reach the digest (it is not a "## Still open" section) but MUST reach
   # --reconcile, and the already-corrected form must not come back as a false positive.
@@ -144,24 +165,28 @@ esac
 # WSL reports "Linux" from uname, so it must be tested before plain Linux. The
 # /proc/version marker is the reliable tell; $WSL_DISTRO_NAME is unset under some
 # service managers and sudo's env_reset.
-detect_root() {
+detect_root() {   # assigns SYSTEM and WWW; never call it in a subshell
   case "$(uname -s)" in
-    Darwin)                 SYSTEM=Mac;      echo "$HOME/www" ;;
-    MINGW*|MSYS*|CYGWIN*)   SYSTEM=Windows;  echo "/m" ;;
+    Darwin)                 SYSTEM=Mac;      WWW=$HOME/www ;;
+    MINGW*|MSYS*|CYGWIN*)   SYSTEM=Windows;  WWW=/m ;;
     Linux)
       if grep -qi microsoft /proc/version 2>/dev/null; then
-        SYSTEM=WSL2;        echo "/mnt/www"
+        SYSTEM=WSL2;        WWW=/mnt/www
       else
-        SYSTEM=Linux;       echo "$HOME/www"
+        SYSTEM=Linux;       WWW=$HOME/www
       fi ;;
-    *)                      SYSTEM=$(uname -s); echo "$HOME/www" ;;
+    *)                      SYSTEM=$(uname -s); WWW=$HOME/www ;;
   esac
 }
 
 if [ $# -gt 0 ]; then
   WWW=$1; SYSTEM="explicit argument"
 else
-  WWW=$(detect_root)
+  # Called plainly, NOT as $(detect_root): a command substitution runs this in a
+  # subshell, so SYSTEM would be set there and lost here. The message below then
+  # reads it under `set -u` and the script dies with "SYSTEM: unbound variable" —
+  # in the error path, which is the one path a new user always takes.
+  detect_root
 fi
 
 if [ ! -d "$WWW/context/context" ]; then
