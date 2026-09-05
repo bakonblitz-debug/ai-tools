@@ -1,0 +1,31 @@
+{"type":"run","run_id":"20260904-193022","at":"2026-09-04T19:30:22-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"da39a3ee5e6b","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-193022","task":"C1-slugify","category":"coding","tier":1,"result":"FAIL","secs":214,"rc":0}
+{"type":"run","run_id":"20260904-193731","at":"2026-09-04T19:37:32-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-193731","task":"C2-lru-cache","category":"coding","tier":2,"result":"FAIL","secs":202,"rc":0}
+{"type":"check","run_id":"20260904-193731","task":"C3-refactor-split","category":"coding","tier":3,"result":"FAIL","secs":138,"rc":0}
+{"type":"note","run_id":"20260904-193731","at":"2026-09-04T19:45:34-04:00","note":"VOID: runner lacked --no-restore-cwd, so the agent resolved relative paths against /mnt/www and wrote textkit/lru.py + ANSWER.md to the share root instead of the sandbox. C2 and C3 measured the harness. Re-run after the fix. Stray files removed from the share root."}
+{"type":"run","run_id":"20260904-194541","at":"2026-09-04T19:45:42-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-194541","task":"C1-slugify","category":"coding","tier":1,"result":"FAIL","secs":249,"rc":0}
+{"type":"check","run_id":"20260904-194541","task":"C2-lru-cache","category":"coding","tier":2,"result":"PASS","secs":48,"rc":0}
+{"type":"check","run_id":"20260904-194541","task":"C3-refactor-split","category":"coding","tier":3,"result":"PASS","secs":136,"rc":0}
+{"type":"run","run_id":"20260904-200201","at":"2026-09-04T20:02:01-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"note","run_id":"20260904-193022","at":"2026-09-04T20:02:34-04:00","note":"VOID for comparison: same pre---no-restore-cwd runner as 193731, and its fingerprint recorded skills_sha as sha1 of nothing (the skills path had moved). The C1 FAIL in it was genuine - the edits landed in the sandbox and were diffed - but it was produced by a different harness than every later run, so it is excluded from the rates."}
+{"type":"check","run_id":"20260904-200201","task":"B1-truncate-offbyone","category":"bugfix","tier":1,"result":"FAIL","secs":86,"rc":0}
+{"type":"check","run_id":"20260904-200201","task":"B2-wordfreq-regression","category":"bugfix","tier":2,"result":"FAIL","secs":79,"rc":0}
+{"type":"check","run_id":"20260904-200201","task":"C1-slugify","category":"coding","tier":1,"result":"FAIL","secs":196,"rc":0}
+{"type":"check","run_id":"20260904-200201","task":"C2-lru-cache","category":"coding","tier":2,"result":"PASS","secs":54,"rc":0}
+{"type":"check","run_id":"20260904-200201","task":"C3-refactor-split","category":"coding","tier":3,"result":"PASS","secs":92,"rc":0}
+{"type":"run","run_id":"20260904-201043","at":"2026-09-04T20:10:43-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-201043","task":"B1-truncate-offbyone","category":"bugfix","tier":1,"result":"PASS","secs":127,"rc":0}
+{"type":"check","run_id":"20260904-201043","task":"B2-wordfreq-regression","category":"bugfix","tier":2,"result":"PASS","secs":116,"rc":0}
+{"type":"check","run_id":"20260904-201043","task":"C1-slugify","category":"coding","tier":1,"result":"FAIL","secs":419,"rc":0}
+{"type":"check","run_id":"20260904-201043","task":"C2-lru-cache","category":"coding","tier":2,"result":"PASS","secs":50,"rc":0}
+{"type":"check","run_id":"20260904-201043","task":"C3-refactor-split","category":"coding","tier":3,"result":"FAIL","secs":198,"rc":0}
+{"type":"run","run_id":"20260904-202608","at":"2026-09-04T20:26:09-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-202608","task":"B1-truncate-offbyone","category":"bugfix","tier":1,"result":"FAIL","secs":48,"rc":0}
+{"type":"check","run_id":"20260904-202608","task":"B2-wordfreq-regression","category":"bugfix","tier":2,"result":"FAIL","secs":131,"rc":0}
+{"type":"check","run_id":"20260904-202608","task":"C1-slugify","category":"coding","tier":1,"result":"FAIL","secs":162,"rc":0}
+{"type":"check","run_id":"20260904-202608","task":"C2-lru-cache","category":"coding","tier":2,"result":"PASS","secs":98,"rc":0}
+{"type":"check","run_id":"20260904-202608","task":"C3-refactor-split","category":"coding","tier":3,"result":"FAIL","secs":143,"rc":0}
+{"type":"run","run_id":"20260904-210910","at":"2026-09-04T21:09:11-04:00","model":"gemma4:64k","ctx":"65536","hermes":"Hermes Agent v0.21.0 (2026.8.31) · upstream 8924b3ae","skills_sha":"11d1c917a382","soul_sha":"f0b339de7a80"}
+{"type":"check","run_id":"20260904-210910","task":"C2-lru-cache","category":"coding","tier":2,"result":"PASS","secs":91,"rc":0}

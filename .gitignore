@@ -23,3 +23,7 @@ harness/hermes-harness-2026-07-02.md
 harness/context
 harness/memory
 *.bak
+
+# Bench run artifacts: transcripts and copied fixtures, one tree per run.
+# The durable record is harness/bench/scoreboard/results.jsonl, which is tracked.
+harness/bench/results/

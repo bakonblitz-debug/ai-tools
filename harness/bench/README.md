@@ -76,9 +76,26 @@ bash /mnt/www/ai-tools/harness/bench/run-bench.sh all
 BENCH_MODEL=gemma3:27b-65k bash /mnt/www/ai-tools/harness/bench/run-bench.sh C1-slugify
 ```
 
-The runner copies fixtures into `results/<run-id>/<task>/work/`, runs setup, prompts Hermes
-(`hermes chat -q`), captures the transcript, runs `check.sh`, and appends result records to
-`scoreboard/results.jsonl`. Nothing is overwritten; results accumulate.
+The runner copies fixtures into a sandbox under `/tmp`, runs setup, prompts Hermes
+(`chat --query-file … --oneshot --in <workdir> --no-restore-cwd --yolo`), captures the transcript,
+runs `check.sh`, and copies the whole tree to `results/<run-id>/<task>/` afterwards. Result records
+append to `scoreboard/results.jsonl`; nothing is overwritten, results accumulate.
+
+Three details that are load-bearing rather than stylistic:
+
+- **`--no-restore-cwd`.** Without it a fresh session restores its recorded workspace cwd, and every
+  relative tool path resolves there instead of in the sandbox — measured 2026-09-04, when a run
+  wrote its answer, its module and an entire `.venv/` to the root of the share.
+- **`--query-file`, not `-q`.** Prompts are markdown full of backticks and `$`; argv is one quoting
+  mistake away from mangling them.
+- **`chat`, not `-z`.** `-z` prints only the final answer, and principle 3 needs the tool calls
+  visible in the transcript to scan for fabricated output.
+
+`HERMES_BIN`, `HERMES_USER` and `WWW_ROOT` override the defaults if the layout differs.
+
+Render the ledger with `python3 scoreboard/build-scoreboard.py` (writes `SCOREBOARD.md`). A run
+whose numbers turned out to measure the harness gets a `note` record containing `VOID`, which
+excludes it from the rates — visibly, rather than by deleting the record.
 
 ## Grading (Mac side — Claude Code)
 
