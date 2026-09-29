@@ -27,3 +27,7 @@ harness/memory
 # Bench run artifacts: transcripts and copied fixtures, one tree per run.
 # The durable record is harness/bench/scoreboard/results.jsonl, which is tracked.
 harness/bench/results/
+
+# Machine-local config: real paths/hostnames, not secrets, but personal.
+# harness/.env.example is the committed, generic template — this is not it.
+harness/.env
