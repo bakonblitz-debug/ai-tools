@@ -38,10 +38,14 @@ SANCTIONED = ("context-index.sh", "sync-log", "session-audit.py", "sync-memory.s
               "health-check.sh", "session-todo.sh", "context-check-monthly.sh")
 EXCERPT = 120
 HEADING = "## Still open — unlabelled candidates"
+# started/ended/duration_s are what make tokens-per-hour and tokens-per-request
+# computable (his choice of headline metric, 2026-09-29). A request is one assistant
+# message; an hour is wall clock between the first and last timestamp in the session,
+# which includes his thinking time and is therefore a rate for the SESSION, not for me.
 COLUMNS = [
-    "session", "date", "project", "assistant_msgs", "interruptions", "tool_errors",
-    "denials", "generated_edits", "tokens_in", "tokens_out", "cache_read",
-    "cache_create", "thinking", "models",
+    "session", "date", "started", "ended", "duration_s", "active_s", "project", "assistant_msgs",
+    "interruptions", "tool_errors", "denials", "generated_edits", "tokens_in",
+    "tokens_out", "cache_read", "cache_create", "thinking", "models",
 ]
 
 
@@ -56,7 +60,10 @@ def scan(path):
     m["session"] = path.stem
     m["project"] = path.parent.name
     m["date"] = ""
+    m["started"] = ""
+    m["ended"] = ""
     models = set()
+    stamps = []
     candidates = []
 
     for line in path.open(encoding="utf8", errors="replace"):
@@ -66,8 +73,12 @@ def scan(path):
             continue
 
         ts = rec.get("timestamp", "")
-        if ts and not m["date"]:
-            m["date"] = ts[:10]
+        if ts:
+            if not m["date"]:
+                m["date"] = ts[:10]
+                m["started"] = ts
+            m["ended"] = ts
+            stamps.append(ts)
 
         if rec.get("type") == "queue-operation" and rec.get("operation") == "enqueue":
             body = str(rec.get("content", "")).lstrip()
@@ -142,6 +153,36 @@ def scan(path):
                     ))
 
     m["models"] = ",".join(sorted(models)) or "-"
+    # active_s sums only the gaps a human could plausibly be present for. duration_s
+    # spans first to last timestamp and is inflated by sessions left open for days,
+    # which made the first tokens/hour figure meaningless (measured: 776 wall hours
+    # across 80 sessions, 9.7h each).
+    IDLE = 300
+    m["active_s"] = 0
+    if len(stamps) > 1:
+        from datetime import datetime
+        fmt = "%Y-%m-%dT%H:%M:%S"
+        prev = None
+        for ts in stamps:
+            try:
+                cur = datetime.strptime(ts[:19], fmt)
+            except ValueError:
+                continue
+            if prev is not None:
+                gap = (cur - prev).total_seconds()
+                if 0 <= gap <= IDLE:
+                    m["active_s"] += int(gap)
+            prev = cur
+    m["duration_s"] = 0
+    if m["started"] and m["ended"]:
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m-%dT%H:%M:%S"
+            a = datetime.strptime(m["started"][:19], fmt)
+            b = datetime.strptime(m["ended"][:19], fmt)
+            m["duration_s"] = max(0, int((b - a).total_seconds()))
+        except ValueError:
+            m["duration_s"] = 0
     return m, candidates
 
 
