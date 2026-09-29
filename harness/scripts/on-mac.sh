@@ -39,8 +39,8 @@
 
 set -uo pipefail
 
-HOST="${ON_MAC_HOST:-mac}"
-WWW="${ON_MAC_WWW:-\$HOME/www}"
+HOST="${REMOTE_HOST:-mac}"
+WWW="${REMOTE_WWW:-\$HOME/www}"
 
 usage() {
   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
@@ -87,7 +87,10 @@ SSH_FLAGS=()
 # read. Without this, `gh`, and anything else brew-installed, reports "command not
 # found" while the binary is sitting right there. Cost an incorrect "gh is not
 # installed anywhere" conclusion on 2026-08-30 before the cause was spotted.
-BREW_PATH="${ON_MAC_BREW_PATH:-/opt/homebrew/bin:/opt/homebrew/sbin}"
+BREW_PATH="${REMOTE_BREW_PATH:-/opt/homebrew/bin:/opt/homebrew/sbin}"
 
-exec ssh "${SSH_FLAGS[@]}" "$HOST" \
+# ${SSH_FLAGS[@]+"${SSH_FLAGS[@]}"}, not "${SSH_FLAGS[@]}": macOS ships bash 3.2,
+# where an EMPTY array under `set -u` still throws "unbound variable" on plain
+# array expansion. This form is the bash-3.2-safe way to expand "zero or more".
+exec ssh ${SSH_FLAGS[@]+"${SSH_FLAGS[@]}"} "$HOST" \
   "export PATH=$BREW_PATH:\$PATH; cd $DIR 2>/dev/null || { echo \"on-mac: no such directory: $DIR\" >&2; exit 66; }; exec bash -lc$(printf ' %q' "$REMOTE_CMD")"

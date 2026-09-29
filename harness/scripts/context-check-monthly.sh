@@ -14,9 +14,14 @@
 #
 # Usage: context-check-monthly.sh [/path/to/context-repo]
 set -u
-CTX="${1:-$HOME/www/context}"
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 WWW="$(cd "$SELF_DIR/../../.." && pwd)"       # harness/scripts -> ai-tools -> ~/www
+# lib-root.sh just for its harness/.env sourcing here, so CONTEXT_ROOT set
+# there is picked up without a second loader.
+. "$SELF_DIR/lib-root.sh"
+# CONTEXT_ROOT (harness/.env) overrides the default; the default itself is now
+# derived from where this script actually sits, not a hardcoded $HOME/www.
+CTX="${1:-${CONTEXT_ROOT:-$WWW/context}}"
 HANDOFF="$WWW/.plans/handoff-context-check.md"
 STAMP=$(date '+%Y-%m-%d %H:%M')
 

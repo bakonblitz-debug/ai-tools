@@ -59,7 +59,8 @@ current task's focus is the higher-order goal.
    fact.
 2. **Write the handoff plan** to the **workspace share**, at `<root>/.plans/handoff-<slug>.md`
    — `~/www/.plans/` on the Mac, `M:\.plans\` on the PC, `/mnt/www/.plans/` from
-   WSL/Hermes. `<slug>` is a short kebab-case summary (e.g.
+   WSL/Hermes (three real spellings of the same root; see `detect_root()` in
+   `harness/scripts/session-todo.sh`). `<slug>` is a short kebab-case summary (e.g.
    `handoff-null-account-export.md`). Use the template below — it *is* the plan of
    work the subagent will execute.
 

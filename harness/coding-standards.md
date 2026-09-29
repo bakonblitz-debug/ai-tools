@@ -4,6 +4,10 @@ These are the standards I hold every line of work to, whichever agent I happen t
 
 The short version: secure by default, private by law, tested before trusted.
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 ---
 
 ## Security
@@ -29,9 +33,9 @@ OWASP Top 10 (2021) is the working checklist, not a poster on the wall. Before a
 
 Established 2026-07-04, after real bank statements turned up inside the shared tree.
 
-Real personal data never lives physically inside `~/www`. When he uploads PII for any project — statements, exports, database dumps — it goes to `~/ai-restricted/<project>/<purpose>/` in his user root, outside the SMB share. If an app needs those files, a gitignored symlink points from inside the repo to the restricted folder; local processes follow it, agents don't.
+Real personal data never lives physically inside `<workspace>`. When he uploads PII for any project — statements, exports, database dumps — it goes to `~/ai-restricted/<project>/<purpose>/` in his user root, outside the SMB share. If an app needs those files, a gitignored symlink points from inside the repo to the restricted folder; local processes follow it, agents don't.
 
-I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genuinely seems to need that data, I stop and ask, and we use synthetic samples instead. (Setup details and the pending SMB-side verification: `~/www/.plans/pii-save-folder-handoff-20260704.md`.)
+I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genuinely seems to need that data, I stop and ask, and we use synthetic samples instead. (Setup details and the pending SMB-side verification: `<workspace>/.plans/pii-save-folder-handoff-20260704.md`.)
 
 ## Development
 
@@ -43,7 +47,7 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - SOLID at every layer. One reason to change per class.
 - Dependencies get injected, never constructed inside logic.
 - Design patterns earn their place. I reach for one when it removes real complexity, not to decorate a class diagram — a pattern that needs explaining twice probably wasn't needed once.
-- **Scripts I write for myself are kept and reused, never improvised twice.** If a script will run more than once — a parser, a capture helper, a reconciliation, a cleanup, a diagnostic — it goes into the repo it serves (`scripts/` with a runner entry) or into `harness/scripts/` when it is cross-project, *not* into the session scratchpad. His rule, stated 2026-08-16, and it is general: it costs fewer tokens than re-deriving the thing and it keeps the behaviour identical each run. A scratchpad script is invisible to the next session and to the other machine, so what gets re-derived drifts. **The test is whether the script has future value, not whether the answer does** — a one-time diff or an exploratory query is a genuine throwaway; anything I would write a second time is not. Before writing a helper, check whether I already wrote it. Cross-project helpers that exist today: **`harness/scripts/on-mac.sh`** — runs a command on the Mac inside a workspace project, because Docker on the PC cannot bind-mount `M:` (it mounts *empty and silently*) and git object writes fail over SMB. Use it for any build, test or git operation against `~/www`; `sync-memory.sh` and `claude-bootstrap.sh` are the other two.
+- **Scripts I write for myself are kept and reused, never improvised twice.** If a script will run more than once — a parser, a capture helper, a reconciliation, a cleanup, a diagnostic — it goes into the repo it serves (`scripts/` with a runner entry) or into `harness/scripts/` when it is cross-project, *not* into the session scratchpad. His rule, stated 2026-08-16, and it is general: it costs fewer tokens than re-deriving the thing and it keeps the behaviour identical each run. A scratchpad script is invisible to the next session and to the other machine, so what gets re-derived drifts. **The test is whether the script has future value, not whether the answer does** — a one-time diff or an exploratory query is a genuine throwaway; anything I would write a second time is not. Before writing a helper, check whether I already wrote it. Cross-project helpers that exist today: **`harness/scripts/on-mac.sh`** — runs a command on the Mac inside a workspace project, because on this two-machine share Docker on the Windows side cannot bind-mount the workspace (it mounts *empty and silently*) and git object writes fail over SMB from there. Use it for any build, test or git operation against `<workspace>`; `sync-memory.sh` and `claude-bootstrap.sh` are the other two.
 - Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
 
 ### Why one test per lap — the measurement
@@ -115,4 +119,4 @@ On top of it, each language and framework has its own conventions. Those live as
 
 ---
 
-*Summarized in `hermes-harness-2026-07-02.md`'s Hard Constraints section; this file is the canonical version. Referenced by `harness.md` (Context Protocol, Worker Output Gate) and the task-spec templates.*
+*Summarized in a private Hermes operating note (not in this repo) under its Hard Constraints section; this file is the canonical version. Referenced by `harness.md` (Context Protocol, Worker Output Gate) and the task-spec templates.*

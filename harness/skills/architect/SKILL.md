@@ -18,6 +18,10 @@ description: >
 
 # Architect — Idea → Proven Plan → Tasks → Shipped Work
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 ## Current wiring — read this before running the pipeline
 
 **Corrected 2026-08-02.** The tier table below still describes the original five-tier design. Two of
@@ -42,8 +46,8 @@ delegation config wins.
 
 > **Model:** Switch to `deepseek-r1:32b-65k` before starting (`/model deepseek-r1:32b-65k`) —
 > matches this skill's existing ouroboros-loop role; it is the fleet's planning/architecture/
-> judgment-call model (see `/mnt/www/ai-tools/harness/hermes-harness-2026-07-02.md`'s Model Fleet
-> table), which is what this skill's own sequencing/gating decisions need.
+> judgment-call model (see the private Hermes operating note's Model Fleet table — not in this
+> repo), which is what this skill's own sequencing/gating decisions need.
 > Switch back to `gemma3:27b-65k` when complete (the fleet's documented ambient default — NOT
 > `qwen2.5:14b`, which this build's harness doc explicitly bans: "Never use qwen models — they
 > hallucinate tool calls." The previous version of this instruction predated that documented
@@ -96,7 +100,7 @@ automation** — not Claude-in-Chrome, not a scripted session, not "just once to
 hard rule, 2026-08-30, as an account-safety precaution. `gh` is the official client with token auth
 and is unambiguously legitimate; automating the web UI is the grey area.
 
-`gh` 2.98.0 is installed on the Mac and authenticated as `bakonblitz-debug` with `repo` scope, so
+`gh` 2.98.0 is installed on the Mac and authenticated with `repo` scope under his GitHub account, so
 filing works today. Reach it through the wrapper: `on-mac.sh <project> gh issue create ...`.
 
 If `gh` is ever genuinely unavailable, **prepare the issue text and say plainly that it was not
@@ -191,7 +195,7 @@ step needs the jira-ticket skill rather than hand-rolling ticket creation.
 
 Two sub-phases, both crossing into the separate `claude` CLI subprocess ecosystem (see "Two
 separate agent ecosystems" above). Full detail — exact shell invocation, JSON parsing, fallback
-chain, front-loading requirement — lives in `/mnt/www/ai-tools/harness/harness.md`'s "Plan /
+chain, front-loading requirement — lives in `<workspace>/ai-tools/harness/harness.md`'s "Plan /
 Task-Decompose mechanism" section; summary here:
 
 **1a. Research.** Shell out via `terminal` (per the `claude-code` skill's print-mode pattern) to
@@ -202,17 +206,17 @@ reads, doc lookups, "does this already exist" — it never makes the design deci
 must be **thorough enough that Phase 1b's single invocation never needs to ask a clarifying
 question** — front-load everything Plan will need, because this subprocess is one-shot, not a
 back-and-forth conversation. Write the parsed `result` field to
-`/mnt/www/.plans/<slug>/research-findings.md`. Apply the fallback chain (harness.md) if Fable is
+`<workspace>/.plans/<slug>/research-findings.md`. Apply the fallback chain (harness.md) if Fable is
 unavailable or Anthropic is unreachable entirely — note that the second fallback (Anthropic
 unreachable) changes the *mechanism*, not just the model: it becomes a plain local `delegate_task`
 child running `deepseek-r1:32b-65k`, not a `claude` CLI subprocess at all.
 
 **1b. Plan.** Pipe the research-findings file as context into a second subprocess call:
-`cat /mnt/www/.plans/<slug>/research-findings.md | claude -p "<plan directive — instructs the
+`cat <workspace>/.plans/<slug>/research-findings.md | claude -p "<plan directive — instructs the
 subprocess to invoke superpowers:brainstorming on this input, and explicitly: 'do not ask
 clarifying questions — if something is genuinely uncertain, make the best-supported assumption
 and flag it inline as #PLAN_UNCERTAINTY instead'>" --model <opus-model-id> --output-format json
---max-turns <N>`. Write the parsed result to `/mnt/www/.plans/<slug>/design-draft.md`. Record the
+--max-turns <N>`. Write the parsed result to `<workspace>/.plans/<slug>/design-draft.md`. Record the
 `session_id` in case a same-tier follow-up is needed (`--resume <id>`) — but prefer getting the
 directive right the first time over relying on follow-up turns, since each turn is a fresh billed
 subprocess call.
@@ -241,11 +245,11 @@ Since Phase 1b was Opus-authored, ouroboros's Phase 5 verifier should default to
 Shell out via the same `claude` CLI subprocess mechanism as Phase 1, this time pointed at the
 ouroboros-certified `PLAN.md`: `cat <PLAN.md path> | claude -p "<decompose directive — instructs
 the subprocess to invoke superpowers:write-plan on this input, producing task specs using the
-templates at /mnt/www/ai-tools/harness/templates/task-spec-template.md and spike-template.md
+templates at <workspace>/ai-tools/harness/templates/task-spec-template.md and spike-template.md
 (the subprocess has its own file-read tools — point it at the paths rather than inlining the
 templates into this prompt), applying the Spike-vs-Full-Spec decision rule from harness.md>"
 --model <sonnet-model-id> --output-format json --max-turns <N>`. Write each resulting task spec to
-its own file under `/mnt/www/.plans/<slug>/tasks/`. Task creation is meant to be cheap and
+its own file under `<workspace>/.plans/<slug>/tasks/`. Task creation is meant to be cheap and
 mechanical here — ouroboros already did the hard adversarial work upstream, per his framing.
 
 ## Phase 4 — Build (Worker, local) & gate — NEW

@@ -1,15 +1,20 @@
 # Workspace instructions
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`. Hermes runs in WSL2, so its cwd is always the
+> `/mnt/www` spelling.
+
 > ## ⚠ THIS FILE IS NOT LOADED. Editing it changes nothing.
 >
 > Verified 2026-09-03 by probing a live session's `system_prompt`: unique strings from this file
 > (`One machine at a time`, `Label the shell`) are **absent**. Hermes discovers context files
 > **cwd-only** and only under the names `AGENTS.md` / `CLAUDE.md` / `.cursorrules`
-> (`agent/prompt_builder.py:build_context_files_prompt`). The cwd is `/mnt/www`, which has no
+> (`agent/prompt_builder.py:build_context_files_prompt`). The cwd is `<workspace>`, which has no
 > `AGENTS.md` — so a copy or symlink at `~/.hermes/.hermes/AGENTS.md` is never read.
 >
 > What Hermes actually loads: **`SOUL.md`** (→ `local-ai-setup/SOUL.md`, git-tracked, no sudo) and
-> **`/mnt/www/CLAUDE.md`** (the cwd context file). Put instructions in those.
+> **`<workspace>/CLAUDE.md`** (the cwd context file). Put instructions in those.
 >
 > Rules below that reach Hermes nowhere else — one machine at a time, label the shell, git identity,
 > no `Co-Authored-By` trailers, doc voice — need folding into `SOUL.md`, budget permitting. It is
@@ -40,25 +45,25 @@ task. I do it and stop, and I do not infer a larger job from the surrounding con
 Orient only before substantive work on this workspace: planning, building, changing code, or a
 question about past decisions I cannot answer by looking directly. Then read only as far as I need:
 
-1. `/mnt/www/context/context/CONTEXT.md` — the git-tracked context tree, canonical and cross-machine.
-   Note the **doubled `context`**: `/mnt/www/context` is the repo, `/mnt/www/context/context` is the
-   tree. `/mnt/www/context/CONTEXT.md` does not exist and I keep reaching for it by mistake.
+1. `<workspace>/context/context/CONTEXT.md` — the git-tracked context tree, canonical and cross-machine.
+   Note the **doubled `context`**: `<workspace>/context` is the repo, `<workspace>/context/context` is
+   the tree. `<workspace>/context/CONTEXT.md` does not exist and I keep reaching for it by mistake.
    Top index → per-project folders → feature folders → issue files. Drill into the relevant folder;
    do not read the whole tree.
-2. `/mnt/www/context/ORIENT.md` — the workspace map and the sync rules, if step 1 was not enough.
-3. `/mnt/www/CLAUDE.md` — the shared entrypoint both machines load, if I am about to change code.
+2. `<workspace>/context/ORIENT.md` — the workspace map and the sync rules, if step 1 was not enough.
+3. `<workspace>/CLAUDE.md` — the shared entrypoint both machines load, if I am about to change code.
 
-**The context tree lives ONLY in `/mnt/www/context/`.** `ai-tools/harness/context/` and
+**The context tree lives ONLY in `<workspace>/context/`.** `ai-tools/harness/context/` and
 `ai-tools/harness/memory/` are stale local shadows, gitignored, and carry no `CONTEXT.md` — anything
 found there is months old. Do not read them and do not write to them.
 
 Record durable outcomes back into the tree per its own conventions when a task finishes. Writes under
-`/mnt/www/context/` need `ai-tools/harness/scripts/sync-memory.sh /mnt/www/context` afterwards, since
-no hook of mine sees them.
+`<workspace>/context/` need `ai-tools/harness/scripts/sync-memory.sh <workspace>/context` afterwards,
+since no hook of mine sees them.
 
 ## 2. Before writing code
 
-Read `/mnt/www/ai-tools/harness/coding-standards.md` — the universal floor. Then load the drop-in for
+Read `<workspace>/ai-tools/harness/coding-standards.md` — the universal floor. Then load the drop-in for
 whatever I am working in from `coding-standards.d/` (`php.md`, `frontend.md`, …). If there is no file
 for that language the floor still applies in full.
 

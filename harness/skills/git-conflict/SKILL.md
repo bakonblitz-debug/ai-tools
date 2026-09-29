@@ -128,7 +128,7 @@ the same conflict re-appears at the next merge.
 
 When the conflicted paths are under `harness/context/` or `harness/memory/`
 (the cross-machine context tree and shared Claude Code memory), the two sides
-are usually Isaac working on or talking about the same things from two
+are usually him working on or talking about the same things from two
 machines at once — the conflict is between *recorded ideas*, not
 implementations. The mechanical steps above still apply (§1-2, marker
 removal, a final end-to-end read), but "run the test suite" doesn't, and the
@@ -139,17 +139,17 @@ Code side, ignore this skill's model-switch header — run as-is.)
 Read both sides, then classify what actually diverged:
 
 1. **Same idea, different wording or caveats** → merge into one entry that
-   keeps every caveat from both sides. Then give Isaac a short summary
+   keeps every caveat from both sides. Then give him a short summary
    anyway: why the conflict happened (which machines/sessions collided) and
    what the differences were — he gets the note even when nothing needs his
    decision.
 2. **Differing ideas** — the two entries would lead to different actions →
-   challenge Isaac on the substance: present both versions and where each
+   challenge him on the substance: present both versions and where each
    came from, what each implies going forward, and ask which stands — or
    whether the divergence means his thinking moved on and both entries are
    stale.
 3. **Philosophy-level divergence** — the entries reveal different underlying
-   principles, not just different conclusions → pick Isaac's brain: talk it
+   principles, not just different conclusions → pick his brain: talk it
    through until it's clear where he actually sits now, and record *that* —
    the resolved position, dated, superseding both sides — rather than
    merging text.

@@ -60,7 +60,12 @@ set -euo pipefail
 # so relying on $HOME here would be fragile. Override with HERMES_CONFIG=
 # if the install ever moves.
 CONFIG="${HERMES_CONFIG:-/home/isaac/.hermes/.hermes/config.yaml}"
-SKILLS_DIR="/mnt/www/ai-tools/harness/skills"
+
+# detect_root() picks the same /mnt/www default this always had on WSL2;
+# harness/.env (WORKSPACE_ROOT) overrides it if the install ever moves.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/lib-root.sh"
+detect_root
+SKILLS_DIR="$WWW/ai-tools/harness/skills"
 
 if [[ "$(whoami)" != "hermes" ]]; then
   echo "WARNING: running as '$(whoami)', not 'hermes'." >&2
@@ -74,7 +79,7 @@ if [[ ! -f "$CONFIG" ]]; then
 fi
 
 if [[ ! -d "$SKILLS_DIR" ]]; then
-  echo "ERROR: $SKILLS_DIR not found — is /mnt/www mounted?" >&2
+  echo "ERROR: $SKILLS_DIR not found — is $WWW mounted?" >&2
   exit 1
 fi
 

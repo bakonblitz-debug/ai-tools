@@ -30,20 +30,18 @@
 # time the workspace changes gets deleted instead of fixed.
 set -u
 
-case "$(uname -s)" in
-  Darwin)               SYSTEM=Mac;     WWW=$HOME/www ;;
-  MINGW*|MSYS*|CYGWIN*) SYSTEM=Windows; WWW=/m ;;
-  Linux) if grep -qi microsoft /proc/version 2>/dev/null
-         then SYSTEM=WSL2; WWW=/mnt/www
-         else SYSTEM=Linux; WWW=$HOME/www; fi ;;
-  *)                    SYSTEM=$(uname -s); WWW=$HOME/www ;;
-esac
+# detect_root() (workspace root per OS, plus the harness/.env override) lives
+# in lib-root.sh so this file and session-todo.sh share one definition.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-root.sh"
+detect_root
 # Configuration. Two knobs, and for each one it matters whether the user ASKED for a
 # value or just got the default: "you pointed me somewhere that is not there" is a
 # failure, "you never mentioned a workspace" is simply an unconfigured optional piece.
 # Conflating those is what made a fresh clone report three FAILs it could do nothing
-# about. Workspace root: --root PATH. Remote: REMOTE_HOST (was hardcoded `mac`).
+# about. Workspace root: --root PATH or WORKSPACE_ROOT (.env). Remote: REMOTE_HOST
+# (was hardcoded `mac`).
 WWW_EXPLICIT=0
+[ "$SYSTEM" = "explicit (WORKSPACE_ROOT)" ] && WWW_EXPLICIT=1
 REMOTE_EXPLICIT=${REMOTE_HOST:+1}; REMOTE_EXPLICIT=${REMOTE_EXPLICIT:-0}
 REMOTE_HOST=${REMOTE_HOST:-mac}
 
@@ -86,6 +84,29 @@ check_remote_reachable() {
   # setup has none, and must not be told its git is broken.
   [ "$REMOTE_EXPLICIT" = 1 ]     && { echo "ssh $REMOTE_HOST failed — git for the share runs there, so commits are blocked"; return 1; }
   echo "no remote configured (optional) — set REMOTE_HOST to enable"; return 77
+}
+
+# The repo is public and doubles as a portfolio, so a personal identifier reaching a
+# tracked file is a leak, not untidiness. The 2026-09-29 tool/notebook split swept 27
+# files by hand and MISSED one, because the sweep pattern matched paths and emails but
+# not a bare first name. A hand sweep that has to be repeated is not a check; this is.
+# Allowlist, settled 2026-09-29: LICENSE and the plugin manifests carry author metadata
+# on purpose, .env.example documents the keys, and results.jsonl is recorded measurement
+# data — rewriting it to look tidy would falsify a result.
+check_no_personal_identifiers() {
+  REPO=$(cd "$SCRIPTS/../.." && pwd)
+  command -v git >/dev/null 2>&1 || { echo "git not available"; return 77; }
+  git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repo"; return 77; }
+  allow='^(LICENSE|\.claude-plugin/marketplace\.json|harness/\.claude-plugin/plugin\.json|harness/\.env\.example|harness/bench/scoreboard/results\.jsonl)$'
+  hits=$(git -C "$REPO" ls-files \
+    | grep -vE "$allow" \
+    | while read -r f; do
+        # Every alternative is bracketed ([I]saac, [b]acon@...) so the pattern does not
+        # match the file it is written in. Without that this check flags itself, forever.
+        grep -lE '[b]akonblitzgithub|[i]saacbacon1|[b]acon@proton|[I]saac' "$REPO/$f" 2>/dev/null
+      done)
+  [ -z "$hits" ] || { echo "personal identifier in: $(echo "$hits" | sed "s|$REPO/||" | tr '\n' ' ')"; return 1; }
+  echo "no personal identifiers outside the allowlist"
 }
 
 check_digest_selftest() {
