@@ -115,4 +115,4 @@ On top of it, each language and framework has its own conventions. Those live as
 
 ---
 
-*Summarized in `hermes-harness-2026-07-02.md`'s Hard Constraints section; this file is the canonical version. Referenced by `harness.md` (Context Protocol, Worker Output Gate) and the task-spec templates.*
+*Summarized in a private Hermes operating note (not in this repo) under its Hard Constraints section; this file is the canonical version. Referenced by `harness.md` (Context Protocol, Worker Output Gate) and the task-spec templates.*
