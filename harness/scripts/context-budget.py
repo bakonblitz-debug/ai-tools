@@ -64,9 +64,10 @@ def report(path, threshold):
         pct = size / int(window)
         line = f"context ≈ {size:,} tokens over {requests} requests — {pct:.0%} of {int(window):,}"
         if pct >= threshold:
+            root = os.environ.get("WORKSPACE_ROOT", "~/www")
             return 1, (
                 f"⚠ {line}. Past the {threshold:.0%} mark: write a handoff plan to "
-                f"~/www/.plans/handoff-<topic>.md and continue in a fresh session. Every further "
+                f"{root}/.plans/handoff-<topic>.md and continue in a fresh session. Every further "
                 f"request in this one pays the full {size:,}."
             )
         return 0, line

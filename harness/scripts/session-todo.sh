@@ -182,27 +182,9 @@ case ${1:-} in
   *) MODE=digest ;;
 esac
 
-# One tree, three mount points: ~/www on the Mac, /mnt/www in WSL2, M:\ (= /m under
-# Git Bash) on the PC. Pick by system, then VERIFY — a digest that prints an empty
-# list because it looked in the wrong place is indistinguishable from "nothing is
-# open", which is the one failure that makes this tool actively misleading.
-#
-# WSL reports "Linux" from uname, so it must be tested before plain Linux. The
-# /proc/version marker is the reliable tell; $WSL_DISTRO_NAME is unset under some
-# service managers and sudo's env_reset.
-detect_root() {   # assigns SYSTEM and WWW; never call it in a subshell
-  case "$(uname -s)" in
-    Darwin)                 SYSTEM=Mac;      WWW=$HOME/www ;;
-    MINGW*|MSYS*|CYGWIN*)   SYSTEM=Windows;  WWW=/m ;;
-    Linux)
-      if grep -qi microsoft /proc/version 2>/dev/null; then
-        SYSTEM=WSL2;        WWW=/mnt/www
-      else
-        SYSTEM=Linux;       WWW=$HOME/www
-      fi ;;
-    *)                      SYSTEM=$(uname -s); WWW=$HOME/www ;;
-  esac
-}
+# detect_root() (workspace root per OS, plus the harness/.env override) now
+# lives in lib-root.sh so health-check.sh and friends share one definition.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-root.sh"
 
 if [ $# -gt 0 ]; then
   WWW=$1; SYSTEM="explicit argument"
