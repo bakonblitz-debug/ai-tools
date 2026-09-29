@@ -42,8 +42,8 @@ delegation config wins.
 
 > **Model:** Switch to `deepseek-r1:32b-65k` before starting (`/model deepseek-r1:32b-65k`) —
 > matches this skill's existing ouroboros-loop role; it is the fleet's planning/architecture/
-> judgment-call model (see `/mnt/www/ai-tools/harness/hermes-harness-2026-07-02.md`'s Model Fleet
-> table), which is what this skill's own sequencing/gating decisions need.
+> judgment-call model (see the private Hermes operating note's Model Fleet table — not in this
+> repo), which is what this skill's own sequencing/gating decisions need.
 > Switch back to `gemma3:27b-65k` when complete (the fleet's documented ambient default — NOT
 > `qwen2.5:14b`, which this build's harness doc explicitly bans: "Never use qwen models — they
 > hallucinate tool calls." The previous version of this instruction predated that documented

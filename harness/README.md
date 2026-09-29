@@ -16,9 +16,9 @@ tiered-model pipeline sized for his actual hardware and workflow.
 
 ## Relation to other docs in this stack
 
-- **`hermes-harness-2026-07-02.md`** (this directory, deliberately kept out
-  of git) — the 5-phase (Orient/Ground/Plan/Build/Verify/Record) default
-  operating mode for Hermes as an engineering collaborator. It governs
+- **A private Hermes operating note, not in this repo** — the 5-phase
+  (Orient/Ground/Plan/Build/Verify/Record) default operating mode for Hermes
+  as an engineering collaborator. It governs
   *every* non-trivial Hermes task; the pipeline here is what runs *inside*
   its Plan/Build phases when a task is big enough to warrant the full tiered
   treatment. Small tasks just use the five phases directly.
@@ -79,7 +79,9 @@ tiered-model pipeline sized for his actual hardware and workflow.
     ├── README.md                 — this file
     ├── harness.md                — the actual tiered-delegation design
     ├── coding-standards.md       — canonical security/privacy/dev floor
-    ├── hermes-harness-2026-07-02.md — Hermes' 5-phase operating mode (gitignored)
+    │                               (Hermes' 5-phase operating mode is a private
+    │                               note, not in this repo — see "Relation to
+    │                               other docs" above)
     ├── scripts/
     │   ├── claude-bootstrap.sh   — Claude Code SessionStart hook: pulls the
     │   │                           context repo, then prints its ORIENT.md so
