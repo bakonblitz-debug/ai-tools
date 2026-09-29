@@ -11,6 +11,10 @@
 set -u
 CTX="${1:?usage: sync-memory.sh /path/to/context-repo}"
 
+# Resolved BEFORE the cd below: $0 is relative when the hook invokes this, and the
+# cd into $CTX made every relative path break silently (caught 2026-09-29).
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # git-optional: nothing to sync if this isn't a git repo
 [ -d "$CTX/.git" ] || exit 0
 
@@ -37,6 +41,10 @@ cd "$CTX" || exit 0
 # hostname and the tree would lose track of which machine authored what.
 HOST_LABEL="${SYNC_HOST_LABEL:-$(hostname)}"
 if [ -n "$(git status --porcelain -- memory context)" ]; then
+  # Regenerate the mechanical half first, so the generated index blocks and ledgers
+  # ride the same commit as the change that caused them. The script is Mac-only and
+  # self-guards elsewhere, so this is a no-op on the PC.
+  [ -x "$SELF_DIR/context-index.sh" ] && "$SELF_DIR/context-index.sh" "$CTX" >/dev/null 2>&1 || true
   git add -- memory context
   git commit --quiet -m "context/memory sync from $HOST_LABEL" || true
 fi

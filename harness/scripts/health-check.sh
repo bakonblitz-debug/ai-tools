@@ -305,6 +305,99 @@ ctx_selftest() {
 }
 
 # ==================================================================================
+# Generated-half checks (2026-09-29). context-index.sh owns the generated index
+# blocks and the per-folder LEDGER.md; these assert its output is current and
+# well-formed. The point is not to nag: a generated block cannot rot, so these are
+# regression tests on the generator, which is why none of them gate a session.
+# ==================================================================================
+
+ctx_index_script() { echo "$WWW/ai-tools/harness/scripts/context-index.sh"; }
+ctx_mac_only() { case $(uname -s) in Darwin) return 0 ;; *) return 1 ;; esac; }
+
+check_context_generated_blocks_current() {
+  t=$(ctx_tree) || { echo "no context tree (optional)"; return 77; }
+  [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
+  ctx_mac_only || { echo "generation is Mac-only (git and local disk live there)"; return 77; }
+  sc=$(ctx_index_script); [ -x "$sc" ] || { echo "context-index.sh missing or not executable"; return 1; }
+  out=$("$sc" "${t%/context}" --check 2>&1) || { echo "$(echo "$out" | tr '\n' ' ' | cut -c1-90)"; return 1; }
+  echo "$out"
+}
+
+check_context_ledger_grammar() {
+  t=$(ctx_tree) || { echo "no context tree (optional)"; return 77; }
+  [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
+  # ponytail: one awk over every ledger, not a grep per line.
+  read -r files lines bad badline <<EOF
+$(find "$t" -name LEDGER.md | LC_ALL=C sort | xargs awk '
+    FNR == 1 { f++ }
+    NF == 0 || /^# generated-at: [0-9a-f]+$/ { next }
+    { n++
+      if ($0 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2} \| [0-9a-f]{7,40} \| [AMDR][0-9]* \| [^|]+ \| \+([0-9]+|\?) -([0-9]+|\?)$/) {
+        b++; if (b == 1) bl = FILENAME ":" FNR
+      } }
+    END { print f+0, n+0, b+0, (bl == "" ? "-" : bl) }' /dev/null)
+EOF
+  [ "${files:-0}" -gt 0 ] || { echo "found 0 LEDGER.md — the generated half was never written"; return 1; }
+  [ "${lines:-0}" -gt 0 ] || { echo "$files ledger(s) but 0 event lines — nothing was scanned"; return 1; }
+  [ "${bad:-0}" = 0 ] || { echo "$bad malformed ledger line(s), first at ${badline#"$t"/}"; return 1; }
+  echo "$files ledgers, $lines events, all well-formed"
+}
+
+check_context_ledger_hashes() {
+  t=$(ctx_tree) || { echo "no context tree (optional)"; return 77; }
+  [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
+  ctx_mac_only || { echo "git runs on the Mac only"; return 77; }
+  [ -d "${t%/context}/.git" ] || { echo "context tree is not a git repo here"; return 77; }
+  # ponytail: ONE batch-check for every distinct sha. Per-sha git calls were the
+  # 232-round-trip mistake the orphan check already paid for.
+  shas=$(find "$t" -name LEDGER.md -exec awk -F' \\| ' 'NF>=2 {print $2}' {} + | LC_ALL=C sort -u)
+  [ -n "$shas" ] || { echo "no ledger hashes to verify — nothing was scanned"; return 1; }
+  missing=$(printf '%s\n' $shas | ( cd "${t%/context}" && git cat-file --batch-check 2>/dev/null ) |
+    grep -c 'missing$' || true)
+  total=$(printf '%s\n' $shas | grep -c .)
+  [ "${missing:-0}" = 0 ] || { echo "$missing of $total ledger hash(es) resolve to no object"; return 1; }
+  echo "$total distinct commits, all present"
+}
+
+check_context_anchors_resolve() {
+  t=$(ctx_tree) || { echo "no context tree (optional)"; return 77; }
+  [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
+  leaves=0; broken=""
+  for f in $(find "$t" -name '*.md' ! -name CONTEXT.md ! -name COMPLETED.md ! -name LEDGER.md); do
+    leaves=$((leaves+1))
+    for a in $(grep -o 'SUPERSEDED-BY:[[:space:]]*#[A-Za-z0-9._-]*' "$f" 2>/dev/null | sed 's/.*#//'); do
+      grep -qF "{#$a}" "$f" || broken="$broken ${f##*/}#$a"
+    done
+  done
+  [ "$leaves" -gt 0 ] || { echo "found 0 leaves — nothing was scanned"; return 1; }
+  [ -z "$broken" ] || { echo "dangling supersede(s):$(echo "$broken" | cut -c1-90)"; return 1; }
+  echo "$leaves leaves, every SUPERSEDED-BY resolves"
+}
+
+check_context_leaves_only_grow() {
+  t=$(ctx_tree) || { echo "no context tree (optional)"; return 77; }
+  [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
+  ctx_mac_only || { echo "git runs on the Mac only"; return 77; }
+  r=${t%/context}; [ -d "$r/.git" ] || { echo "context tree is not a git repo here"; return 77; }
+  # A leaf may only grow. A removed line is a rewrite of recorded history, which is
+  # allowed only when the same change adds a RETRACTION naming what went.
+  # ponytail: uncommitted changes only — that is what a pre-sync gate can see. A
+  # history-wide audit is `git log --numstat` on demand, not a per-run check.
+  offenders=""
+  while IFS=$'\t' read -r add del path; do
+    [ -n "${path:-}" ] || continue
+    case $path in *.md) ;; *) continue ;; esac
+    case ${path##*/} in CONTEXT.md|COMPLETED.md|LEDGER.md) continue ;; esac
+    [ "${del:-0}" = 0 ] && continue
+    ( cd "$r" && git diff HEAD -- "$path" | grep -q '^+.*RETRACTION:' ) || offenders="$offenders ${path##*/}(-$del)"
+  done <<EOF
+$( cd "$r" && git diff HEAD --numstat -- context 2>/dev/null )
+EOF
+  [ -z "$offenders" ] || { echo "leaf line(s) removed with no RETRACTION:$(echo "$offenders" | cut -c1-80)"; return 1; }
+  echo "no leaf shrank without a retraction"
+}
+
+# ==================================================================================
 # Runner
 # ==================================================================================
 VERBOSE=0; FILTER=""
