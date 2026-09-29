@@ -1,11 +1,15 @@
 # ai-tools/harness — Tiered AI-Delegation Pipeline
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 ## What this is
 
 His original 5-tier delegation pipeline for Hermes: **Research (Fable) →
 Plan (Opus) → Verify (ouroboros) → Task-Decompose (Sonnet) → Worker (local
 `devstral:65k`)**, orchestrated by the `architect` skill
-(`/mnt/www/ai-tools/skills/architect/SKILL.md`). The point: when Hermes
+(`<workspace>/ai-tools/skills/architect/SKILL.md`). The point: when Hermes
 delegates work, whoever picks it up should get enough hand-off context to do
 the job as well as a single agent holding the full picture would — the way
 Claude Code's own forked background research agents do.
@@ -27,8 +31,8 @@ tiered-model pipeline sized for his actual hardware and workflow.
   agent outside the pipeline.
 - **The context tree** — the shared, git-tracked source of truth all agents
   orient from and write back to. It lives in a **separate private repo**
-  (`/mnt/www/context/`), never in this public one: it accumulates real PII.
-  Start at `/mnt/www/context/ORIENT.md`, then `/mnt/www/context/context/CONTEXT.md`.
+  (`<workspace>/context/`), never in this public one: it accumulates real PII.
+  Start at `<workspace>/context/ORIENT.md`, then `<workspace>/context/context/CONTEXT.md`.
 
   `harness/context/` and `harness/memory/` are the **in-repo access point** for
   agents scoped to `ai-tools` alone rather than the whole `www` tree — Cowork is
@@ -39,7 +43,8 @@ tiered-model pipeline sized for his actual hardware and workflow.
 
   **Per-machine setup — required, and gitignored so it does not travel.** They are
   *relative* symlinks into the private repo. Relative, not absolute, so the same
-  link resolves on the Mac (`~/www`), in WSL (`/mnt/www`) and on the PC (`M:\`):
+  link resolves under every real spelling of the workspace root (see the note
+  at the top of this file):
 
   ```
   cd <repo>/harness && ln -s ../../context/context context && ln -s ../../context/memory memory
@@ -48,17 +53,18 @@ tiered-model pipeline sized for his actual hardware and workflow.
   Verify with `ls -l harness/context/CONTEXT.md` — it must resolve, and its date
   must match the live tree. If it is a real directory rather than a symlink, it is
   a stale copy: a frozen 2026-07-13 one was found here on 2026-08-03 still naming
-  the old `BakonBlitz/ai-tools` repo and telling agents to commit as the retired,
-  suspended `isaacbacon1+github@gmail.com`. A stale copy here is worse than nothing,
-  because it produces exactly the identity mistake the hard rules forbid.
+  the old repo location and telling agents to commit under a retired, suspended
+  git identity. A stale copy here is worse than nothing, because it produces
+  exactly the identity mistake the hard rules forbid.
 
   **A symlink only works where the agent's confinement is conventional.** It does
   not cross an *enforced* boundary — a symlink out of a FUSE-exposed folder resolves
-  outside the mount and fails. Hermes already has all of `/mnt/www` mounted, so it
-  needs a pointer (`hermes-AGENTS.md`), not a symlink. Cowork is FUSE-confined, so
+  outside the mount and fails. Hermes already has the whole workspace root
+  mounted (its WSL2 spelling, `/mnt/www`), so it needs a pointer
+  (`hermes-AGENTS.md`), not a symlink. Cowork is FUSE-confined, so
   whether this works for it is an empirical question: check that it can read
   `harness/context/CONTEXT.md` and see today's content before trusting it.
-- **`/mnt/www/safe-agentic-workflow/`** — a cloned reference repo (11-role
+- **`<workspace>/safe-agentic-workflow/`** — a cloned reference repo (11-role
   SAFe team-coordination template, Linear tickets, PR gates). Read-only. A
   few portable ideas were mined from it into `harness.md` (hand-off tags,
   the Spike-vs-Full-Spec routing rule, the Worker Output Gate checklist
@@ -68,7 +74,7 @@ tiered-model pipeline sized for his actual hardware and workflow.
 ## Layout
 
 ```
-/mnt/www/ai-tools/
+<workspace>/ai-tools/
 ├── skills/                       — existing, unchanged location
 │   ├── architect/SKILL.md        — rewritten: now the tier orchestrator
 │   ├── ouroboros/SKILL.md        — unchanged, reused as the Verify tier

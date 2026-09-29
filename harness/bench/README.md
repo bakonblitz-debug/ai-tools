@@ -1,5 +1,9 @@
 # Bench — empirical proficiency measurement for the local agent
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 The training goal (recorded in `../context/local-ai-dev-platform/CONTEXT.md`): make the local
 agent proficient as a coder/planner on modest hardware. This directory is how we *know* it's
 improving instead of feeling like it is. He and I are the arbiters/curators; Hermes is the
@@ -70,10 +74,10 @@ what the prompt says).
 
 ```bash
 # full fixed set on the default model:
-bash /mnt/www/ai-tools/harness/bench/run-bench.sh all
+bash <workspace>/ai-tools/harness/bench/run-bench.sh all
 
 # a single task / different model:
-BENCH_MODEL=gemma3:27b-65k bash /mnt/www/ai-tools/harness/bench/run-bench.sh C1-slugify
+BENCH_MODEL=gemma3:27b-65k bash <workspace>/ai-tools/harness/bench/run-bench.sh C1-slugify
 ```
 
 The runner copies fixtures into a sandbox under `/tmp`, runs setup, prompts Hermes

@@ -54,8 +54,9 @@ format is the script's job, not yours. `--root` and `--under` work before or
 after the subcommand. Output is one line per file: ISO date, epoch, then the
 path relative to the root.
 
-Default root is `$CONTEXT_ROOT`, else `/mnt/www/context/context`, else
-`~/www/context/context`.
+Default root is `$CONTEXT_ROOT`, else `<workspace>/context/context`, where
+`<workspace>` is the per-OS root (`~/www` on Mac/Linux, `/mnt/www` on WSL2,
+`M:\` on Windows) computed by `detect_root()` in `harness/scripts/session-todo.sh`.
 
 ## Do not rebuild this by hand
 

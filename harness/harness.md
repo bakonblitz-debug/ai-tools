@@ -1,9 +1,13 @@
 # Harness — Tiered AI-Delegation Pipeline (`ai-tools/harness`)
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 > **STATUS UPDATE 2026-07-05 (his call):** the Claude-subprocess tiers
 > (Research / Plan / Task-Decompose via `claude` CLI) are **shelved** — he
 > keeps using Claude Code directly as the Claude lane and hands work across
-> as `.md` files on the share (`/mnt/www/.plans/`, the context tree). The
+> as `.md` files on the share (`<workspace>/.plans/`, the context tree). The
 > OPEN DESIGN DECISION below is therefore deferred/moot unless automation
 > is revisited. Verify (ouroboros), Worker (`devstral:65k`), and the
 > `architect` orchestrator remain the live targets. Also superseded: the
@@ -18,7 +22,7 @@ describes what runs *inside* that doc's Plan/Build phases when a task is big
 enough to warrant more than one model's worth of reasoning. Small tasks still
 just use the five phases directly.*
 
-*Not a copy of `/mnt/www/safe-agentic-workflow/` (an 11-role SAFe
+*Not a copy of `<workspace>/safe-agentic-workflow/` (an 11-role SAFe
 team-coordination template, left untouched, reference-only) or of any
 employer Claude Code Team harness — this is an original, one-person,
 tiered-model pipeline.*
@@ -49,11 +53,14 @@ stays entirely native to Hermes, unchanged.
 
 ## Context Protocol — mandatory for every tier and every agent
 
-The git-tracked context tree at `ai-tools/harness/context/CONTEXT.md`
-(`/mnt/www/ai-tools/harness/context/` from Hermes) is the shared source of
-truth for all AIs in this workspace — every Claude Code account, Hermes and
-all its delegated tiers, and (via the `~/www/CONTEXT.md` distillation)
-Claude Desktop. Its conventions (index format, issue-file naming,
+The git-tracked context tree at `<workspace>/context/context/CONTEXT.md` is the shared
+source of truth for all AIs in this workspace — every Claude Code account, Hermes and
+all its delegated tiers, and Claude Desktop, which all read the tree directly (the old
+Desktop-facing distillation at the workspace root is retired). Agents scoped to
+`ai-tools` alone reach the same tree via the gitignored `ai-tools/harness/context/`
+symlink instead (see `ai-tools/harness/README.md`) — Hermes is not one of those, and
+reads the tree directly (see `hermes-AGENTS.md`). Its conventions (index format,
+issue-file naming,
 Desktop-sync checkboxes) are documented in its own top file. Non-negotiable
 rules for this pipeline:
 
@@ -204,15 +211,15 @@ JSON result shape (`result`, `session_id`, `total_cost_usd`, `subtype`), and
 # Research
 terminal(command="claude -p '<research directive>' --model <fable-model-id> \
   --output-format json --max-turns 20", timeout=180)
-# → parse .result, write to /mnt/www/.plans/<slug>/research-findings.md
+# → parse .result, write to <workspace>/.plans/<slug>/research-findings.md
 
 # Plan — front-load Research's output as piped context
-terminal(command="cat /mnt/www/.plans/<slug>/research-findings.md | claude -p \
+terminal(command="cat <workspace>/.plans/<slug>/research-findings.md | claude -p \
   '<plan directive: invoke superpowers:brainstorming on this input; do NOT ask \
   clarifying questions — make the best-supported assumption and flag it inline \
   as #PLAN_UNCERTAINTY instead>' --model <opus-model-id> --output-format json \
-  --max-turns 30", workdir="/mnt/www/.plans/<slug>", timeout=300)
-# → parse .result, write to /mnt/www/.plans/<slug>/design-draft.md
+  --max-turns 30", workdir="<workspace>/.plans/<slug>", timeout=300)
+# → parse .result, write to <workspace>/.plans/<slug>/design-draft.md
 # → note .session_id in case a same-tier --resume follow-up is genuinely needed
 ```
 
@@ -366,7 +373,7 @@ multi-file, behavior-changing edit to a skill he actively relies on.
 
 **Not** per-skill symlinks under `~/.hermes/.hermes/skills/local/<name>` —
 that path convention doesn't exist in Hermes 0.18.0. The real mechanism:
-`skills.external_dirs:` in `config.yaml`, one entry (`/mnt/www/ai-tools/skills`),
+`skills.external_dirs:` in `config.yaml`, one entry (`<workspace>/ai-tools/skills`),
 recursively scanned for `SKILL.md` at any depth, merged live (no restart,
 no caching gotcha), local-name-wins on collision. `ai-tools/harness/sync-
 skills.sh`'s job is now: idempotent check-and-patch of that one config key,
@@ -384,7 +391,7 @@ version-controlled with the rest of the harness. It edits a file inside
 the `hermes` account:
 
 ```
-sudo -u hermes bash /mnt/www/ai-tools/harness/sync-skills.sh
+sudo -u hermes bash <workspace>/ai-tools/harness/sync-skills.sh
 ```
 
 He runs this himself; I can't execute it against the live install.
