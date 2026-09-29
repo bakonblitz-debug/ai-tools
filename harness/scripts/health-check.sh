@@ -30,20 +30,18 @@
 # time the workspace changes gets deleted instead of fixed.
 set -u
 
-case "$(uname -s)" in
-  Darwin)               SYSTEM=Mac;     WWW=$HOME/www ;;
-  MINGW*|MSYS*|CYGWIN*) SYSTEM=Windows; WWW=/m ;;
-  Linux) if grep -qi microsoft /proc/version 2>/dev/null
-         then SYSTEM=WSL2; WWW=/mnt/www
-         else SYSTEM=Linux; WWW=$HOME/www; fi ;;
-  *)                    SYSTEM=$(uname -s); WWW=$HOME/www ;;
-esac
+# detect_root() (workspace root per OS, plus the harness/.env override) lives
+# in lib-root.sh so this file and session-todo.sh share one definition.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-root.sh"
+detect_root
 # Configuration. Two knobs, and for each one it matters whether the user ASKED for a
 # value or just got the default: "you pointed me somewhere that is not there" is a
 # failure, "you never mentioned a workspace" is simply an unconfigured optional piece.
 # Conflating those is what made a fresh clone report three FAILs it could do nothing
-# about. Workspace root: --root PATH. Remote: REMOTE_HOST (was hardcoded `mac`).
+# about. Workspace root: --root PATH or WORKSPACE_ROOT (.env). Remote: REMOTE_HOST
+# (was hardcoded `mac`).
 WWW_EXPLICIT=0
+[ "$SYSTEM" = "explicit (WORKSPACE_ROOT)" ] && WWW_EXPLICIT=1
 REMOTE_EXPLICIT=${REMOTE_HOST:+1}; REMOTE_EXPLICIT=${REMOTE_EXPLICIT:-0}
 REMOTE_HOST=${REMOTE_HOST:-mac}
 
