@@ -387,6 +387,8 @@ check_context_leaves_only_grow() {
   # allowed only when the same change adds a RETRACTION naming what went.
   # ponytail: uncommitted changes only — that is what a pre-sync gate can see. A
   # history-wide audit is `git log --numstat` on demand, not a per-run check.
+  # -M is load-bearing: without it a rename (yearly log rotation, for one) reads as
+  # a whole-file deletion and fails a check that is meant to catch rewrites.
   offenders=""
   while IFS=$'\t' read -r add del path; do
     [ -n "${path:-}" ] || continue
@@ -395,7 +397,7 @@ check_context_leaves_only_grow() {
     [ "${del:-0}" = 0 ] && continue
     ( cd "$r" && git diff HEAD -- "$path" | grep -q '^+.*RETRACTION:' ) || offenders="$offenders ${path##*/}(-$del)"
   done <<EOF
-$( cd "$r" && git diff HEAD --numstat -- context 2>/dev/null )
+$( cd "$r" && git diff HEAD -M --numstat -- context 2>/dev/null )
 EOF
   [ -z "$offenders" ] || { echo "leaf line(s) removed with no RETRACTION:$(echo "$offenders" | cut -c1-80)"; return 1; }
   echo "no leaf shrank without a retraction"

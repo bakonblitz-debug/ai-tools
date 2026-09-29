@@ -46,6 +46,61 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - **Scripts I write for myself are kept and reused, never improvised twice.** If a script will run more than once — a parser, a capture helper, a reconciliation, a cleanup, a diagnostic — it goes into the repo it serves (`scripts/` with a runner entry) or into `harness/scripts/` when it is cross-project, *not* into the session scratchpad. His rule, stated 2026-08-16, and it is general: it costs fewer tokens than re-deriving the thing and it keeps the behaviour identical each run. A scratchpad script is invisible to the next session and to the other machine, so what gets re-derived drifts. **The test is whether the script has future value, not whether the answer does** — a one-time diff or an exploratory query is a genuine throwaway; anything I would write a second time is not. Before writing a helper, check whether I already wrote it. Cross-project helpers that exist today: **`harness/scripts/on-mac.sh`** — runs a command on the Mac inside a workspace project, because Docker on the PC cannot bind-mount `M:` (it mounts *empty and silently*) and git object writes fail over SMB. Use it for any build, test or git operation against `~/www`; `sync-memory.sh` and `claude-bootstrap.sh` are the other two.
 - Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
 
+### Why one test per lap — the measurement
+
+Same worker (`devstral:65k`), same verification, same day:
+
+| shape | attempts to green | inference | tokens |
+|---|---|---|---|
+| 18 assertions handed over at once | **4** | ~100 s | ~1500 |
+| one failing test per lap, 4 laps | **0 retries** | ~4 s | ~160 |
+
+Under the batch prompt it wrote local-calendar date arithmetic that drifts across a DST boundary; given
+one narrow test it reached for the millisecond form unprompted. The size of the target mattered more
+than the model. A small lap also caught a bug the spec never mentioned (a future-dated posting counting
+as "recent").
+
+## Harness systems — the bar for anything the harness itself runs
+
+His standing instruction, 2026-09-29: *"always assume that we want this systematic. Solid as heck,
+tests, analyzable, no vagueness, deterministic as much as it can ever be."* This applies to every
+script, hook, check and data file the harness runs on itself. "Solid as heck" is not a feeling, so it
+is spelled out as conditions something either meets or does not:
+
+1. **Generated beats maintained.** If a human has to remember to update it, it rots. The career index
+   rotted twice inside a month with a check already watching it. Generate the file, or have a check
+   that fails when it drifts — never rely on discipline.
+2. **A rule with no check is a preference.** Every invariant gets a check, and every check **fails
+   loudly when it scans nothing**. A lint that walks an empty tree and reports success manufactures
+   confidence, which is worse than no lint.
+3. **Tests live with the script.** An embedded `--selftest` over synthetic fixtures, following
+   `session-todo.sh` and `context-index.sh`. Synthetic because these scripts ship in the public repo
+   and the real data carries PII.
+4. **Determinism is a requirement, not a preference.** Same input, same bytes. `LC_ALL=C` on every
+   sort, no timestamps in generated output, no dependence on `find` order or locale. Two machines must
+   produce identical files.
+5. **Idempotence.** Running twice changes nothing. If the second run differs, the ordering inside the
+   script is wrong (generate what a later step points at *first*).
+6. **Machine-parseable output.** One record per line, fixed field count, a stable fingerprint for
+   dedup. If a human has to read prose to extract a number, it cannot be analysed.
+7. **Watermark anything derived from a moving source.** A file generated from git history trails HEAD
+   the moment it is written. Record the rev it was built at and verify against that, or "stale" and
+   "hand-edited" become indistinguishable and the check flaps forever.
+8. **Failure must be visible without anyone looking.** No silent `exit 0`. Surface through a channel he
+   already reads — the session digest, a handoff file — not a new one, and not a mail that only fires
+   on failure: the jobhunt capture died quietly for two days that way.
+9. **Serialise, do not race.** Hooks fire concurrently with manual runs. Take a lock (`mkdir` is the
+   atomic primitive available everywhere; macOS has no `flock(1)`), and under contention **skip rather
+   than fail** — a verdict about a tree being rewritten underneath you is noise.
+10. **A detector must be tested against a known instance of what it detects.** Measured 2026-09-29: a
+    failure detector written in the same session as two real violations found neither, because it
+    watched `Write`/`Edit` while every edit went through Bash. Loosening it then flagged 24 events that
+    were the sanctioned generators doing their job. **If the panel is empty, assume the parser is
+    broken before assuming the behaviour was clean.**
+11. **Never let the measured party author the measurement.** Any metric whose numerator I maintain is a
+    metric I can improve by doing less bookkeeping. Prefer counts derived from raw evidence — his
+    interruptions, tool denials, reverts, re-edits — and state each metric's gaming vector next to it.
+
 ## Language-specific standards
 
 Everything above is the universal floor. It holds in every language and every framework, and nothing below relaxes it.
