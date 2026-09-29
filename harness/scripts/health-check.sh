@@ -319,6 +319,10 @@ check_context_generated_blocks_current() {
   [ -n "$t" ] || { echo "no context tree (optional)"; return 77; }
   ctx_mac_only || { echo "generation is Mac-only (git and local disk live there)"; return 77; }
   sc=$(ctx_index_script); [ -x "$sc" ] || { echo "context-index.sh missing or not executable"; return 1; }
+  # A sync is mid-flight: the tree is being rewritten right now, so any answer here
+  # is about a half-written state. SKIP is the honest verdict; a FAIL would flap.
+  [ -d "${t%/context}/.git/context-index.lock" ] &&
+    { echo "generation in progress (sync holds the lock)"; return 77; }
   out=$("$sc" "${t%/context}" --check 2>&1) || { echo "$(echo "$out" | tr '\n' ' ' | cut -c1-90)"; return 1; }
   echo "$out"
 }

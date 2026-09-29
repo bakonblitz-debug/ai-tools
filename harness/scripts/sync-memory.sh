@@ -10,6 +10,7 @@
 # memory still works locally. Point it at a private git repo to get sync.
 set -u
 CTX="${1:?usage: sync-memory.sh /path/to/context-repo}"
+PER_EDIT=0
 
 # Resolved BEFORE the cd below: $0 is relative when the hook invokes this, and the
 # cd into $CTX made every relative path break silently (caught 2026-09-29).
@@ -23,6 +24,7 @@ SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ ! -t 0 ] && { [ -p /dev/stdin ] || [ -f /dev/stdin ]; }; then
   INPUT="$(cat 2>/dev/null || true)"
   if printf '%s' "$INPUT" | grep -q '"tool_input"'; then
+    PER_EDIT=1
     # match a context/ or memory/ path segment. Both separators must be accepted
     # on BOTH sides: Windows sends backslash paths (M:\context\memory\x.md, which
     # arrives JSON-escaped as \\), and requiring a forward slash after the segment
@@ -41,6 +43,34 @@ cd "$CTX" || exit 0
 # hostname and the tree would lose track of which machine authored what.
 HOST_LABEL="${SYNC_HOST_LABEL:-$(hostname)}"
 if [ -n "$(git status --porcelain -- memory context)" ]; then
+  # Serialise generate+commit. Without this, two hook invocations (PostToolUse fires
+  # per edit, Stop fires again) interleave, and a manual health-check running at the
+  # same moment sees a half-written tree and reports drift that is not there. mkdir
+  # is the atomic primitive available everywhere; macOS has no flock(1). The lock
+  # lives inside .git so it is never committed and never reaches the other machine.
+  LOCK="$CTX/.git/context-index.lock"
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    # Stale lock: a killed run leaves the directory behind. 300 s is far longer than
+    # a generate+commit takes (measured well under 2 s on 20 folders).
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+      rmdir "$LOCK" 2>/dev/null || true
+      mkdir "$LOCK" 2>/dev/null || exit 0
+    elif [ "$PER_EDIT" = 1 ]; then
+      # Mid-session, per-edit: the holder is about to commit the same convergent
+      # output, and another edit (or the Stop hook) will fire again. Dropping this
+      # run loses nothing, so no queue is needed for it.
+      exit 0
+    else
+      # Stop hook or a manual run: this is the LAST chance to flush the session, so
+      # wait for the holder instead of dropping the work. A bounded coalescing wait,
+      # not a daemon: one slot, no state, no ordering to get wrong.
+      i=0
+      while [ -d "$LOCK" ] && [ "$i" -lt 30 ]; do sleep 1; i=$((i+1)); done
+      mkdir "$LOCK" 2>/dev/null || exit 0
+    fi
+  fi
+  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT INT TERM
+
   # Regenerate the mechanical half first, so the generated index blocks and ledgers
   # ride the same commit as the change that caused them. The script is Mac-only and
   # self-guards elsewhere, so this is a no-op on the PC.
