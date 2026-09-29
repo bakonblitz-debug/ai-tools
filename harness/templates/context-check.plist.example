@@ -2,8 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- context-check.plist.example — template for a per-user launchd job.
+         Not rendered by anything yet (that installer is a later lap); for now,
+         copy this to ~/Library/LaunchAgents/com.<you>.context-check.plist and
+         replace every @WORKSPACE_ROOT@ with your home directory (macOS only —
+         launchd has no WSL2/Windows equivalent), then `launchctl load` it.
+         @WORKSPACE_ROOT@ here means $HOME (the parent of the `www` share),
+         not $HOME/www as the shell scripts elsewhere call it — HOME and
+         Library/Logs sit above the share, so one literal substitution covers
+         all six paths below. -->
     <key>Label</key>
-    <string>com.bacon.context-check</string>
+    <string>com.example.context-check</string>
 
     <!-- Monthly regression test for the context tree: the generator's selftest plus
          the context checks in health-check.sh. Generation itself runs on every
@@ -13,12 +22,12 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/bacon/www/ai-tools/harness/scripts/context-check-monthly.sh</string>
-        <string>/Users/bacon/www/context</string>
+        <string>@WORKSPACE_ROOT@/www/ai-tools/harness/scripts/context-check-monthly.sh</string>
+        <string>@WORKSPACE_ROOT@/www/context</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/bacon/www/ai-tools</string>
+    <string>@WORKSPACE_ROOT@/www/ai-tools</string>
 
     <!-- launchd starts with a near-empty PATH. git is the only hard dependency and
          it lives in /usr/bin on macOS; HOME is set because the script derives the
@@ -28,7 +37,7 @@
         <key>PATH</key>
         <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
         <key>HOME</key>
-        <string>/Users/bacon</string>
+        <string>@WORKSPACE_ROOT@</string>
     </dict>
 
     <!-- 08:00 on the 1st. Monthly is only safe because generation prevents the
@@ -50,8 +59,8 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Users/bacon/Library/Logs/context-check.log</string>
+    <string>@WORKSPACE_ROOT@/Library/Logs/context-check.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/bacon/Library/Logs/context-check.log</string>
+    <string>@WORKSPACE_ROOT@/Library/Logs/context-check.log</string>
 </dict>
 </plist>
