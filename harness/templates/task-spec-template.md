@@ -1,7 +1,11 @@
 # Task Spec: <slug>
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 **Tier chain:** Research (Fable) → Plan (Opus) → Verify/ouroboros → Task-Decompose (Sonnet) → Worker (<model>)
-**Parent Plan:** /mnt/www/.plans/<slug>-YYYY-MM-DD.md | **Ceremony:** Full
+**Parent Plan:** <workspace>/.plans/<slug>-YYYY-MM-DD.md | **Ceremony:** Full
 
 ## Goal
 <one paragraph — what "done" means in plain language>
@@ -10,7 +14,7 @@
 - [ ] <testable condition>
 
 ## Pattern References
-- Context: `/mnt/www/ai-tools/harness/context/<project>/<feature>/CONTEXT.md` — read before starting; durable outcomes get recorded back there at completion (orchestrator's job, per harness.md's Context Protocol)
+- Context: `<workspace>/ai-tools/harness/context/<project>/<feature>/CONTEXT.md` — read before starting; durable outcomes get recorded back there at completion (orchestrator's job, per harness.md's Context Protocol)
 - Follow: `<path/to/existing/file-or-utility>` — because <why this is the established convention>
 - Do NOT reinvent: <thing that already exists elsewhere>
 

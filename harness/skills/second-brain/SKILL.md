@@ -18,6 +18,10 @@ tags:
 
 # Second Brain — Engineering Mode
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 > **Default model:** `deepseek-r1:32b-65k` for orientation and planning.
 > Switch to `gemma3:27b-65k` for implementation. Switch back when done.
 
@@ -43,7 +47,7 @@ If a trajectory exists for this type of task, read it. Do not start from scratch
 when prior work exists.
 
 **0b. Check for an existing plan.**
-Run: `ls /mnt/www/.plans/ | grep <slug>` — if a plan file exists for this task,
+Run: `ls <workspace>/.plans/ | grep <slug>` — if a plan file exists for this task,
 read it before doing anything else. Resume from where work left off.
 
 **0c. Read AGENTS.md.**
@@ -63,12 +67,12 @@ This phase builds that understanding. It is not optional and it is not a formali
 
 **Run these in parallel — do not run them sequentially:**
 
-- `ls /mnt/www/<project>/src/app/` — models, controllers, services layout
-- `cat /mnt/www/<project>/src/composer.json` — stack, dependencies, versions
-- `cat /mnt/www/<project>/src/routes/web.php` — full route map
-- `ls /mnt/www/<project>/src/app/Models/` — what models exist
-- `ls /mnt/www/<project>/src/app/Services/` — what service layer exists
-- `ls /mnt/www/<project>/src/tests/` — test structure
+- `ls <workspace>/<project>/src/app/` — models, controllers, services layout
+- `cat <workspace>/<project>/src/composer.json` — stack, dependencies, versions
+- `cat <workspace>/<project>/src/routes/web.php` — full route map
+- `ls <workspace>/<project>/src/app/Models/` — what models exist
+- `ls <workspace>/<project>/src/app/Services/` — what service layer exists
+- `ls <workspace>/<project>/src/tests/` — test structure
 
 Then, targeted reads based on what the task actually touches. If the task is about
 transactions: read `Transaction.php`, `TransactionController.php`, any related
@@ -96,7 +100,7 @@ No code is written in this phase. No files are changed.
 A plan that has not been approved is not a plan — it is a guess.
 
 **Write the plan file.**
-Path: `/mnt/www/.plans/<slug>-YYYY-MM-DD.md`
+Path: `<workspace>/.plans/<slug>-YYYY-MM-DD.md`
 Slug: short kebab-case name for this task.
 
 Plan file format:
@@ -127,7 +131,7 @@ Plan file format:
 ```
 
 **Announce the plan file path in chat.**
-"Plan saved to `/mnt/www/.plans/<slug>-YYYY-MM-DD.md`"
+"Plan saved to `<workspace>/.plans/<slug>-YYYY-MM-DD.md`"
 
 **Gate — present the plan and wait.**
 Show the numbered approach to the user. Ask: "Does this match what you want, or
@@ -173,7 +177,7 @@ something you have not seen.
 
 **Model switching mid-build:**
 When switching to `gemma3:27b-65k` for implementation, say:
-"Switching to gemma3:27b-65k for implementation. Plan is at `/mnt/www/.plans/<slug>.md`,
+"Switching to gemma3:27b-65k for implementation. Plan is at `<workspace>/.plans/<slug>.md`,
 current step: N."
 When switching back to deepseek for planning decisions, say the same in reverse.
 
@@ -231,7 +235,7 @@ Completed YYYY-MM-DD. Tests: green. Trajectory recorded.
 ```
 
 **Tell the user.**
-"Done. Trajectory recorded to memory under [name]. Plan at `/mnt/www/.plans/<slug>.md`
+"Done. Trajectory recorded to memory under [name]. Plan at `<workspace>/.plans/<slug>.md`
 marked complete. What's next?"
 
 ---

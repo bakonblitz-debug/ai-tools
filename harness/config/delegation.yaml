@@ -1,5 +1,12 @@
 # /mnt/www/ai-tools/harness/config/delegation.yaml
 #
+# This is real YAML meant to be merged as-is into Hermes' own config.yaml, so
+# its paths are literal rather than the <workspace> placeholder used elsewhere
+# in these docs — Hermes runs in WSL2 only, so its workspace root is always the
+# /mnt/www spelling. The three real spellings and where they're detected:
+# ~/www (Mac/Linux), /mnt/www (WSL2), M:\ (Windows) — see detect_root() in
+# harness/scripts/session-todo.sh.
+#
 # REVIEWABLE SKETCH — NOT live-applied. Nothing in this file is read by
 # Hermes directly. Real Hermes 0.18.0 config.yaml has NO per-role/per-profile
 # delegation schema — confirmed directly from the installed Hermes source

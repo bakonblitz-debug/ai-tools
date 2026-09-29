@@ -1,5 +1,9 @@
 # Context & memory: a separate, private repo
 
+> Paths below are written as `<workspace>/…`. The real root is `~/www` (Mac/Linux),
+> `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
+> `harness/scripts/session-todo.sh`.
+
 This harness keeps your Claude **memory** and **context** in a *separate
 directory you own* — never inside this `ai-tools` repo. Wired through three
 settings in `~/.claude/settings.json`:
@@ -37,11 +41,11 @@ context repo.
 // ~/.claude/settings.json
 "hooks": {
   "SessionStart": [{ "hooks": [{ "type": "command",
-    "command": "bash ~/www/ai-tools/harness/scripts/claude-bootstrap.sh ~/www/context" }] }],
+    "command": "bash <workspace>/ai-tools/harness/scripts/claude-bootstrap.sh <workspace>/context" }] }],
   "PostToolUse":  [{ "matcher": "Write|Edit", "hooks": [{ "type": "command",
-    "command": "bash ~/www/ai-tools/harness/scripts/sync-memory.sh ~/www/context", "async": true }] }],
+    "command": "bash <workspace>/ai-tools/harness/scripts/sync-memory.sh <workspace>/context", "async": true }] }],
   "Stop":         [{ "hooks": [{ "type": "command",
-    "command": "bash ~/www/ai-tools/harness/scripts/sync-memory.sh ~/www/context", "async": true }] }]
+    "command": "bash <workspace>/ai-tools/harness/scripts/sync-memory.sh <workspace>/context", "async": true }] }]
 },
-"autoMemoryDirectory": "~/www/context/memory"
+"autoMemoryDirectory": "<workspace>/context/memory"
 ```
