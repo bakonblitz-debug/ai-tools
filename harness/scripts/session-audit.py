@@ -46,6 +46,7 @@ COLUMNS = [
     "session", "date", "started", "ended", "duration_s", "active_s", "project", "assistant_msgs",
     "interruptions", "tool_errors", "denials", "generated_edits", "tokens_in",
     "tokens_out", "cache_read", "cache_create", "thinking", "models",
+    "result_bytes", "context_read_bytes", "code_read_bytes",
 ]
 
 
@@ -64,6 +65,10 @@ def scan(path):
     m["ended"] = ""
     models = set()
     stamps = []
+    # tool_use id -> where that call pointed, so a tool_result's size can be
+    # attributed to what was being read. Reading is the suspected cost driver for
+    # context retrieval, and "suspected" is why this is measured rather than argued.
+    targets = {}
     candidates = []
 
     for line in path.open(encoding="utf8", errors="replace"):
@@ -104,12 +109,24 @@ def scan(path):
         for block in content:
             if not isinstance(block, dict):
                 continue
+            if block.get("type") == "tool_use":
+                inp = block.get("input", {}) or {}
+                where = " ".join(str(inp.get(k, "")) for k in
+                                 ("file_path", "path", "command", "pattern", "notebook_path"))
+                targets[block.get("id")] = where
             if block.get("type") == "tool_result":
                 body = block.get("content")
                 if isinstance(body, list):
                     body = " ".join(b.get("text", "") for b in body if isinstance(b, dict))
                 body = str(body)
                 tid = block.get("tool_use_id", "?")
+                size = len(body)
+                m["result_bytes"] += size
+                where = targets.get(tid, "")
+                if "www/context" in where or "context/context" in where:
+                    m["context_read_bytes"] += size
+                elif where:
+                    m["code_read_bytes"] += size
                 # Must OPEN the result. A result that merely quotes a denial (a
                 # transcript inspection, for instance) is not itself a denial.
                 if body.lstrip().startswith("Permission for this action was denied"):
