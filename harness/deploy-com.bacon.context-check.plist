@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bacon.context-check</string>
+
+    <!-- Monthly regression test for the context tree: the generator's selftest plus
+         the context checks in health-check.sh. Generation itself runs on every
+         sync-memory.sh call, which is what prevents drift; this only proves the
+         generator still works. A red run writes .plans/handoff-context-check.md,
+         which the SessionStart digest already prints. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/bacon/www/ai-tools/harness/scripts/context-check-monthly.sh</string>
+        <string>/Users/bacon/www/context</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bacon/www/ai-tools</string>
+
+    <!-- launchd starts with a near-empty PATH. git is the only hard dependency and
+         it lives in /usr/bin on macOS; HOME is set because the script derives the
+         default context path from it. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>/Users/bacon</string>
+    </dict>
+
+    <!-- 08:00 on the 1st. Monthly is only safe because generation prevents the
+         drift; this is the regression test, not the defence. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- One-shot: it must be allowed to exit. -->
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bacon/Library/Logs/context-check.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bacon/Library/Logs/context-check.log</string>
+</dict>
+</plist>
