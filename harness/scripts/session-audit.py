@@ -21,7 +21,9 @@ working friction, not failures, so they are COUNTED and not queued.
 PRIVACY: user message text is never read or stored. Interruptions are counted,
 never quoted. Only tool-side output is excerpted, capped at 120 characters.
 
-Usage: session-audit.py [context-repo] [--days N] [--all] [--stdout]
+Usage:
+  session-audit.py [context-repo] [--days N] [--all] [--stdout]
+  session-audit.py --selftest
 """
 import json
 import os
@@ -213,7 +215,196 @@ def load_seen(path, pattern):
     return seen
 
 
+def selftest():
+    import tempfile
+    global PROJECTS
+    ok = lambda m: print(f"  ok   {m}")
+
+    def bad(m):
+        print(f"  FAIL {m}")
+        sys.exit(1)
+
+    t = Path(tempfile.mkdtemp())
+
+    def transcript(name, lines):
+        """lines: dicts (valid records) or raw strings (e.g. a malformed line)."""
+        p = t / name
+        with p.open("w", encoding="utf8") as fh:
+            for ln in lines:
+                fh.write((json.dumps(ln) if isinstance(ln, dict) else ln) + "\n")
+        return p
+
+    def usage_msg(ts, model="m", tin=0, tout=0, cread=0, ccreate=0, think=0):
+        return {"type": "assistant", "timestamp": ts,
+                "message": {"model": model, "usage": {
+                    "input_tokens": tin, "output_tokens": tout,
+                    "cache_read_input_tokens": cread,
+                    "cache_creation_input_tokens": ccreate,
+                    "output_tokens_details": {"thinking_tokens": think},
+                }}}
+
+    def tool_use(ts, tid, name, **inp):
+        return {"type": "assistant", "timestamp": ts,
+                "message": {"content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}}
+
+    def tool_result(ts, tid, text, is_error=False):
+        return {"type": "user", "timestamp": ts,
+                "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
+                                          "is_error": is_error,
+                                          "content": [{"type": "text", "text": text}]}]}}
+
+    def enqueue(ts, content):
+        return {"type": "queue-operation", "operation": "enqueue", "timestamp": ts, "content": content}
+
+    # 1. Token accounting sums across messages; models/date/duration/active_s derive
+    #    from the first and last timestamp.
+    p = transcript("tok.jsonl", [
+        usage_msg("2026-01-01T10:00:00", model="claude-a", tin=100, tout=50, cread=20, ccreate=10, think=5),
+        usage_msg("2026-01-01T10:05:00", model="claude-b", tin=200, tout=25),
+    ])
+    m, _ = scan(p)
+    got = (m["assistant_msgs"], m["tokens_in"], m["tokens_out"], m["cache_read"], m["cache_create"], m["thinking"])
+    if got != (2, 300, 75, 20, 10, 5):
+        bad(f"token accounting wrong: {got}")
+    if m["models"] != "claude-a,claude-b":
+        bad(f"models not collected/sorted: {m['models']}")
+    if m["date"] != "2026-01-01" or m["started"] != "2026-01-01T10:00:00" or m["ended"] != "2026-01-01T10:05:00":
+        bad(f"date/started/ended wrong: {m}")
+    if m["duration_s"] != 300 or m["active_s"] != 300:
+        bad(f"duration/active_s wrong: {m}")
+    ok("token accounting sums across messages; models/date/duration derived correctly")
+
+    # 2. Interruptions: a queued task-notification is the system resuming itself,
+    #    not him interrupting — only the latter counts.
+    p = transcript("interrupt.jsonl", [
+        enqueue("2026-01-01T10:00:00", "<task-notification>background task done</task-notification>"),
+        enqueue("2026-01-01T10:00:01", "actually let's also fix the typo"),
+    ])
+    m, _ = scan(p)
+    if m["interruptions"] != 1:
+        bad(f"interruption count wrong (task-notification must not count): {m['interruptions']}")
+    ok("a task-notification is not an interruption; a real interjection is")
+
+    # 3. Generic tool errors are counted but never queued — the 60-candidates-in-
+    #    two-days lesson.
+    p = transcript("err.jsonl", [
+        tool_use("2026-01-01T10:00:00", "id1", "Bash", command="ls -la /nope"),
+        tool_result("2026-01-01T10:00:01", "id1", "ls: /nope: No such file or directory", is_error=True),
+    ])
+    m, cands = scan(p)
+    if m["tool_errors"] != 1 or m["denials"] != 0:
+        bad(f"tool error miscounted: {m}")
+    if cands:
+        bad(f"a generic tool error must not queue a candidate: {cands}")
+    ok("generic tool errors are counted but never queued as candidates")
+
+    # 4. A permission denial is both counted and queued.
+    p = transcript("denied.jsonl", [
+        tool_use("2026-01-01T10:00:00", "id2", "Bash", command="rm -rf /"),
+        tool_result("2026-01-01T10:00:01", "id2", "Permission for this action was denied", is_error=True),
+    ])
+    m, cands = scan(p)
+    if m["denials"] != 1:
+        bad(f"denial not counted: {m}")
+    if not any(c[0] == "permission_denied" for c in cands):
+        bad(f"denial did not queue a candidate: {cands}")
+    ok("a permission denial is counted and queued as a candidate")
+
+    # 5. Read bytes are attributed to context vs code by the tool_use target path.
+    ctx_text, code_text = "context file body " * 3, "code file body"
+    p = transcript("bytes.jsonl", [
+        tool_use("2026-01-01T10:00:00", "id3", "Read", file_path="/Users/x/www/context/context/foo.md"),
+        tool_result("2026-01-01T10:00:01", "id3", ctx_text),
+        tool_use("2026-01-01T10:00:02", "id4", "Read", file_path="/repo/src/foo.py"),
+        tool_result("2026-01-01T10:00:03", "id4", code_text),
+    ])
+    m, _ = scan(p)
+    if m["context_read_bytes"] != len(ctx_text) or m["code_read_bytes"] != len(code_text):
+        bad(f"read bytes misattributed: {m}")
+    if m["result_bytes"] != len(ctx_text) + len(code_text):
+        bad(f"total result bytes wrong: {m}")
+    ok("read bytes are attributed to context vs code by the tool_use target path")
+
+    # 6. A Write/Edit aimed at a generated file is counted and queued.
+    p = transcript("write.jsonl", [
+        tool_use("2026-01-01T10:00:00", "id5", "Write", file_path="/repo/context/metrics/LEDGER.md"),
+    ])
+    m, cands = scan(p)
+    if m["generated_edits"] != 1 or not any(c[0] == "generated_file_edit" for c in cands):
+        bad(f"Write to a generated file not counted/queued: {m} {cands}")
+    ok("a Write/Edit aimed at a generated file is counted and queued")
+
+    # 7. Same, via a Bash redirect — and its own sanctioned generator is exempt.
+    p = transcript("bash.jsonl", [
+        tool_use("2026-01-01T10:00:00", "id6", "Bash", command="echo done >> application-log.md"),
+        tool_use("2026-01-01T10:00:01", "id7", "Bash",
+                 command="python3 harness/scripts/session-audit.py ctx >> application-log.md"),
+    ])
+    m, _ = scan(p)
+    if m["generated_edits"] != 1:
+        bad(f"unsanctioned Bash write not caught, or sanctioned one wrongly counted: {m}")
+    ok("a Bash write to a generated file is caught; its own sanctioned generator is exempt")
+
+    # 8. A malformed JSONL line is skipped, not fatal, and does not corrupt the
+    #    records around it.
+    p = transcript("malformed.jsonl", [
+        usage_msg("2026-01-01T10:00:00", tin=1),
+        "{not json",
+        usage_msg("2026-01-01T10:00:01", tin=2),
+    ])
+    try:
+        m, _ = scan(p)
+    except Exception as e:
+        bad(f"a malformed JSONL line must not crash the scan: {e!r}")
+    if m["assistant_msgs"] != 2 or m["tokens_in"] != 3:
+        bad(f"malformed line corrupted surrounding parsing: {m}")
+    ok("a malformed JSONL line is skipped, not fatal")
+
+    # 9. End to end: main() writes one row per session and queues a candidate; a
+    #    second run over the same transcript is idempotent (no duplicate row, no
+    #    re-queued candidate already seen).
+    orig_projects, orig_argv = PROJECTS, sys.argv
+    proj_dir = t / "projects" / "proj1"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "sess1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in [
+            usage_msg("2026-01-01T10:00:00", tin=10, tout=5),
+            tool_use("2026-01-01T10:00:01", "id8", "Write", file_path="/repo/context/metrics/LEDGER.md"),
+        ]) + "\n",
+        encoding="utf8",
+    )
+    ctx_dir = t / "ctx"
+    try:
+        PROJECTS = t / "projects"
+        sys.argv = ["session-audit.py", str(ctx_dir), "--all"]
+        main()
+        tsv = ctx_dir / "context" / "metrics" / "sessions.tsv"
+        cand = ctx_dir / "context" / "metrics" / "candidates.md"
+        if not tsv.exists():
+            bad("main() did not write sessions.tsv")
+        rows = [l for l in tsv.read_text(encoding="utf8").splitlines() if l and not l.startswith("#")]
+        if len(rows) != 1 or "sess1" not in rows[0]:
+            bad(f"expected exactly one row for the session: {rows}")
+        if not cand.exists() or "generated_file_edit" not in cand.read_text(encoding="utf8"):
+            bad("main() did not queue the generated-file-edit candidate")
+        main()  # rerun over the same transcript
+        rows2 = [l for l in tsv.read_text(encoding="utf8").splitlines() if l and not l.startswith("#")]
+        if len(rows2) != 1:
+            bad(f"a second run duplicated the session row: {rows2}")
+        if cand.read_text(encoding="utf8").count("generated_file_edit") != 1:
+            bad("a second run re-queued a candidate already seen")
+        ok("main() writes one row per session and queues candidates idempotently across reruns")
+    finally:
+        PROJECTS, sys.argv = orig_projects, orig_argv
+
+    print("selftest passed")
+
+
 def main():
+    if "--selftest" in sys.argv:
+        selftest()
+        return 0
+
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     ctx = Path(args[0]) if args else Path.home() / "www" / "context"
     days = 0 if "--all" in sys.argv else 2
