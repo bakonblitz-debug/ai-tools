@@ -16,7 +16,10 @@ BENCH=$(cd "$(dirname "$0")" && pwd)
 # the agent runs as its own uid, so the binary is invoked through sudo -u.
 HERMES=${HERMES_BIN:-/home/isaac/.hermes/.hermes/hermes-agent/venv/bin/hermes}
 HERMES_USER=${HERMES_USER:-hermes}
-WWW=${WWW_ROOT:-/mnt/www}
+# WWW_ROOT stays the explicit override it always was; otherwise detect_root()
+# (harness/.env WORKSPACE_ROOT, else the same per-OS default as before).
+. "$BENCH/../scripts/lib-root.sh"
+if [ -n "${WWW_ROOT:-}" ]; then WWW=$WWW_ROOT; else detect_root; fi
 h() { sudo -n -u "$HERMES_USER" "$HERMES" "$@"; }
 
 RUN=$(date +%Y%m%d-%H%M%S)
