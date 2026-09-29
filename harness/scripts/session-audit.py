@@ -176,32 +176,32 @@ def scan(path):
     # spans first to last timestamp and is inflated by sessions left open for days,
     # which made the first tokens/hour figure meaningless (measured: 776 wall hours
     # across 80 sessions, 9.7h each).
+    # Records arrive in file order, which is NOT timestamp order: sidechain and
+    # subagent messages interleave. Summing gaps in file order walks back and forth
+    # over the same wall time and counts it twice — measured 2026-09-29, active_s
+    # exceeded duration_s in 46 of 85 rows, by up to 1.7x. Sort once, then both
+    # figures derive from the same ordered list.
     IDLE = 300
-    m["active_s"] = 0
-    if len(stamps) > 1:
-        from datetime import datetime
-        fmt = "%Y-%m-%dT%H:%M:%S"
-        prev = None
-        for ts in stamps:
-            try:
-                cur = datetime.strptime(ts[:19], fmt)
-            except ValueError:
-                continue
-            if prev is not None:
-                gap = (cur - prev).total_seconds()
-                if 0 <= gap <= IDLE:
-                    m["active_s"] += int(gap)
-            prev = cur
-    m["duration_s"] = 0
-    if m["started"] and m["ended"]:
+    from datetime import datetime
+    fmt = "%Y-%m-%dT%H:%M:%S"
+    times = []
+    for ts in stamps:
         try:
-            from datetime import datetime
-            fmt = "%Y-%m-%dT%H:%M:%S"
-            a = datetime.strptime(m["started"][:19], fmt)
-            b = datetime.strptime(m["ended"][:19], fmt)
-            m["duration_s"] = max(0, int((b - a).total_seconds()))
+            times.append(datetime.strptime(ts[:19], fmt))
         except ValueError:
-            m["duration_s"] = 0
+            continue
+    times.sort()
+    m["active_s"] = 0
+    for prev, cur in zip(times, times[1:]):
+        gap = (cur - prev).total_seconds()
+        if gap <= IDLE:
+            m["active_s"] += int(gap)
+    m["duration_s"] = 0
+    if times:
+        m["started"] = times[0].strftime(fmt)
+        m["ended"] = times[-1].strftime(fmt)
+        m["date"] = m["started"][:10]
+        m["duration_s"] = max(0, int((times[-1] - times[0]).total_seconds()))
     return m, candidates
 
 
@@ -396,6 +396,26 @@ def selftest():
         ok("main() writes one row per session and queues candidates idempotently across reruns")
     finally:
         PROJECTS, sys.argv = orig_projects, orig_argv
+
+    # 10. Records are not guaranteed to be in timestamp order — sidechain and
+    #     subagent messages interleave. active_s must stay bounded by the real wall
+    #     span, and started/ended must be the earliest and latest stamps, not the
+    #     first and last lines. Measured 2026-09-29: active_s exceeded duration_s in
+    #     46 of 85 real rows, up to 1.7x, which inflated tokens/active-hour.
+    p = transcript("unordered.jsonl", [
+        usage_msg("2026-01-01T10:00:00", tin=1),
+        usage_msg("2026-01-01T10:02:00", tin=1),
+        usage_msg("2026-01-01T10:01:00", tin=1),
+        usage_msg("2026-01-01T10:03:00", tin=1),
+    ])
+    m, _ = scan(p)
+    if m["started"] != "2026-01-01T10:00:00" or m["ended"] != "2026-01-01T10:03:00":
+        bad(f"started/ended taken in file order, not by time: {m['started']}..{m['ended']}")
+    if m["duration_s"] != 180:
+        bad(f"duration_s wrong on out-of-order input: {m['duration_s']}")
+    if m["active_s"] > m["duration_s"]:
+        bad(f"active_s {m['active_s']} exceeds duration_s {m['duration_s']}")
+    ok("out-of-order records do not inflate active_s past the wall span")
 
     print("selftest passed")
 
