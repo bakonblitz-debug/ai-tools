@@ -86,6 +86,29 @@ check_remote_reachable() {
   echo "no remote configured (optional) — set REMOTE_HOST to enable"; return 77
 }
 
+# The repo is public and doubles as a portfolio, so a personal identifier reaching a
+# tracked file is a leak, not untidiness. The 2026-09-29 tool/notebook split swept 27
+# files by hand and MISSED one, because the sweep pattern matched paths and emails but
+# not a bare first name. A hand sweep that has to be repeated is not a check; this is.
+# Allowlist, settled 2026-09-29: LICENSE and the plugin manifests carry author metadata
+# on purpose, .env.example documents the keys, and results.jsonl is recorded measurement
+# data — rewriting it to look tidy would falsify a result.
+check_no_personal_identifiers() {
+  REPO=$(cd "$SCRIPTS/../.." && pwd)
+  command -v git >/dev/null 2>&1 || { echo "git not available"; return 77; }
+  git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repo"; return 77; }
+  allow='^(LICENSE|\.claude-plugin/marketplace\.json|harness/\.claude-plugin/plugin\.json|harness/\.env\.example|harness/bench/scoreboard/results\.jsonl)$'
+  hits=$(git -C "$REPO" ls-files \
+    | grep -vE "$allow" \
+    | while read -r f; do
+        # Every alternative is bracketed ([I]saac, [b]acon@...) so the pattern does not
+        # match the file it is written in. Without that this check flags itself, forever.
+        grep -lE '[b]akonblitzgithub|[i]saacbacon1|[b]acon@proton|[I]saac' "$REPO/$f" 2>/dev/null
+      done)
+  [ -z "$hits" ] || { echo "personal identifier in: $(echo "$hits" | sed "s|$REPO/||" | tr '\n' ' ')"; return 1; }
+  echo "no personal identifiers outside the allowlist"
+}
+
 check_digest_selftest() {
   [ -f "$SCRIPTS/session-todo.sh" ] || { echo "session-todo.sh missing"; return 1; }
   out=$(bash "$SCRIPTS/session-todo.sh" --selftest 2>&1) \
