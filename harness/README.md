@@ -4,6 +4,23 @@
 > `/mnt/www` (WSL2), or `M:\` (Windows) — see `detect_root()` in
 > `harness/scripts/session-todo.sh`.
 
+## Start here, if you just cloned this
+
+Most of what is in `harness/` is not tied to any of the machinery below. In rough order of
+usefulness to someone who is not him:
+
+| Want | Read |
+|---|---|
+| The rules every language obeys | `coding-standards.md`, plus the drop-in for your stack in `coding-standards.d/` |
+| Copy-paste runbooks per situation | `prompting/` — bug fix, new feature, TDD, scoped refactor |
+| The skills | `skills/` — `architect` sequences the others; `ouroboros`, `tdd`, `handoff` each stand alone |
+| To wire it into Claude Code | `python3 scripts/install.py` (`--dry-run` first). It merges into your `settings.json`, backs it up, and prints the undo |
+| To check what works on your machine | `bash scripts/health-check.sh` — anything you do not have reports SKIP, not FAIL |
+
+The delegation pipeline described below needs a local model runner and a private context repo.
+**Neither is required for any of the above.** If you do not have them, the pipeline section is
+background reading, not a prerequisite.
+
 ## What this is
 
 His original 5-tier delegation pipeline for Hermes: **Research (Fable) →
@@ -121,8 +138,11 @@ Worker Output Gate, and the `architect` rewrite summary.
 
 ## Status
 
-Documentation and skill content are complete. Live wiring — registering the
-skills path in Hermes' `config.yaml`, installing `claude` CLI + `superpowers`
-inside WSL, an end-to-end pipeline run — is blocked on the separate,
-still-in-progress base Hermes install. See "What can be verified now vs.
-what's blocked" in `harness.md`.
+**The Claude Code side is live and running** — hooks, the session digest, the health checks,
+the standards and the skills are all in daily use. `scripts/health-check.sh` is the acceptance
+test for that half; `scripts/clone-test.sh` checks that a fresh clone works for someone who is
+not him.
+
+**The Hermes delegation pipeline is partially wired.** The base install was redone 2026-09-04;
+skills registration and an end-to-end tiered run are still outstanding. See "What can be
+verified now vs. what's blocked" in `harness.md`. Nothing in the Claude Code half depends on it.

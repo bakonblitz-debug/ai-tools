@@ -15,12 +15,39 @@ The whole thing rests on one idea: **a coding agent does its best work when it h
 - [Models](models.md) — which model for which job, and how to switch
 - [Glossary](glossary.md) — MCP, Boost, skill, agent, the four phases
 - [Prompting guides](harness/prompting/) — copy-paste runbooks per scenario
+- [The harness](harness/README.md) — the machinery: standards, skills, scripts
 
-1. [Principles](#principles)
-2. [The Workflow](#the-workflow)
-3. [The four phases](#the-four-phases)
-4. [Prompting guides](#prompting-guides)
-5. [Repository layout](#repository-layout)
+1. [Running it yourself](#running-it-yourself)
+2. [Principles](#principles)
+3. [The Workflow](#the-workflow)
+4. [The four phases](#the-four-phases)
+5. [Prompting guides](#prompting-guides)
+6. [Repository layout](#repository-layout)
+
+---
+
+## Running it yourself
+
+```
+git clone git@github.com:bakonblitz-debug/ai-tools.git
+python3 ai-tools/harness/scripts/install.py
+```
+
+The installer asks three questions, writes `harness/.env`, and **merges** into your
+`~/.claude/settings.json` — it backs the file up first and leaves your own hooks alone.
+It prints how to undo everything it did. `--dry-run` shows the plan without touching anything.
+
+Needs bash, python3 and git. Nothing else, no package installs.
+
+**What you can decline.** Six of the eight hooks want a *context repo* — a private git repo of
+accumulated project notes. Most people cloning this will not have one, and the installer skips
+that group rather than wiring hooks that fail. The harness still works without it; you lose the
+session digest and the auto-committed memory, not the standards, skills or prompting guides.
+
+**What is specific to my setup and safe to ignore.** Two machines sharing one tree over SMB
+(hence `REMOTE_HOST` and the `ssh` checks), a local model runner, and a macOS launchd job for a
+monthly consistency check. Every one of them degrades to SKIP if you do not have it — run
+`bash harness/scripts/health-check.sh` and anything inapplicable says SKIP rather than failing.
 
 ---
 
@@ -135,27 +162,25 @@ I add guides as I hit new scenarios. A guide earns its place *after* I've done t
 ## Repository layout
 
 ```
-claude-dev-with-me/
-├── README.md          # This file — principles + workflow
-├── cheat-sheet.md     # One-page quick reference
-├── setup.md           # Install checklist, Boost, plugins
-├── models.md          # Which model for which job
-├── glossary.md        # Terms: MCP, Boost, skill, agent, phases
-├── prompting/         # Scenario runbooks
-│   ├── README.md      # Index: which guide when
-│   ├── project-intake.md
-│   ├── bug-fix.md
-│   ├── new-feature.md
-│   ├── tdd.md
-│   ├── scoped-refactor.md
-│   └── review-triggers.md
-└── skills/            # Local Claude Code skills (symlink into ~/.claude/skills)
-    ├── handoff/       # Delegate out-of-scope tangents to a focused subagent
-    │   └── SKILL.md
-    ├── ouroboros/     # Adversarial two-agent planning loop → cross-model-certified plan
-    │   └── SKILL.md
-    └── tdd/           # Build behaviour test-first: red → green → refactor
-        └── SKILL.md
+ai-tools/
+├── README.md              # This file — principles + workflow
+├── cheat-sheet.md         # One-page quick reference
+├── setup.md               # Install Claude Code, log in, plugins
+├── models.md              # Which model for which job
+├── glossary.md            # Terms: MCP, Boost, skill, agent, phases
+└── harness/               # The machinery
+    ├── README.md          # Start here for the harness itself
+    ├── harness.md         # The delegation pipeline in full
+    ├── coding-standards.md        # The universal floor, every language
+    ├── coding-standards.d/        # Language drop-ins (php.md, frontend.md, …)
+    ├── context-and-memory.md      # How the context tree and memory work
+    ├── prompting/         # Scenario runbooks: bug fix, new feature, TDD, refactor
+    ├── skills/            # Claude Code skills: architect, ouroboros, tdd, handoff, …
+    ├── scripts/           # install.py, health-check.sh, session-todo.sh, …
+    ├── templates/         # Spike and task-spec templates, the launchd example
+    ├── config/            # Delegation config
+    ├── bench/             # Measured results, not claims
+    └── .env.example       # Every machine-local key, documented
 ```
 
 ---
