@@ -109,6 +109,16 @@ check_no_personal_identifiers() {
   echo "no personal identifiers outside the allowlist"
 }
 
+# clone-test.sh is the gate for stranger-installability, and on 2026-09-29 its one
+# real assertion was found to be incapable of failing. A guard that cannot fail needs
+# a guard of its own.
+check_clone_test_selftest() {
+  [ -f "$SCRIPTS/clone-test.sh" ] || { echo "clone-test.sh missing"; return 1; }
+  out=$(bash "$SCRIPTS/clone-test.sh" --selftest 2>&1) \
+    || { echo "${out:-selftest failed}"; return 1; }
+  echo "$(printf '%s' "$out" | grep -c '^  ok') cases"
+}
+
 check_digest_selftest() {
   [ -f "$SCRIPTS/session-todo.sh" ] || { echo "session-todo.sh missing"; return 1; }
   out=$(bash "$SCRIPTS/session-todo.sh" --selftest 2>&1) \

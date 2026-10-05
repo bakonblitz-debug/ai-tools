@@ -194,6 +194,9 @@ def scan(path):
     m["active_s"] = 0
     for prev, cur in zip(times, times[1:]):
         gap = (cur - prev).total_seconds()
+        # A negative gap is impossible after sorting, so it means the sort was lost.
+        # Absorbing it silently is what let a removed sort cancel its own double-count.
+        assert gap >= 0, "timestamps not sorted before measuring active time"
         if gap <= IDLE:
             m["active_s"] += int(gap)
     m["duration_s"] = 0
@@ -398,26 +401,90 @@ def selftest():
         PROJECTS, sys.argv = orig_projects, orig_argv
 
     # 10. Records are not guaranteed to be in timestamp order — sidechain and
-    #     subagent messages interleave. active_s must stay bounded by the real wall
-    #     span, and started/ended must be the earliest and latest stamps, not the
-    #     first and last lines. Measured 2026-09-29: active_s exceeded duration_s in
-    #     46 of 85 real rows, up to 1.7x, which inflated tokens/active-hour.
+    #     subagent messages interleave. Measured 2026-09-29: active_s exceeded
+    #     duration_s in 46 of 85 real rows, up to 1.7x, inflating tokens/active-hour.
+    #
+    #     This fixture is deliberately shaped: the first and last RECORDS are not the
+    #     earliest and latest TIMES. The previous version used [10:00, 10:02, 10:01,
+    #     10:03], whose ends happened to be the extremes, so started/ended passed
+    #     without sorting — and asserting `active_s <= duration_s` asserted a theorem
+    #     (after sorting it is true by construction), not a behaviour. Deleting
+    #     times.sort() left all ten cases green. Pin the values, not the inequality.
     p = transcript("unordered.jsonl", [
-        usage_msg("2026-01-01T10:00:00", tin=1),
         usage_msg("2026-01-01T10:02:00", tin=1),
-        usage_msg("2026-01-01T10:01:00", tin=1),
+        usage_msg("2026-01-01T10:00:00", tin=1),
         usage_msg("2026-01-01T10:03:00", tin=1),
+        usage_msg("2026-01-01T10:01:00", tin=1),
     ])
     m, _ = scan(p)
-    if m["started"] != "2026-01-01T10:00:00" or m["ended"] != "2026-01-01T10:03:00":
-        bad(f"started/ended taken in file order, not by time: {m['started']}..{m['ended']}")
-    if m["duration_s"] != 180:
-        bad(f"duration_s wrong on out-of-order input: {m['duration_s']}")
-    if m["active_s"] > m["duration_s"]:
-        bad(f"active_s {m['active_s']} exceeds duration_s {m['duration_s']}")
-    ok("out-of-order records do not inflate active_s past the wall span")
+    got = (m["started"], m["ended"], m["duration_s"], m["active_s"])
+    if got != ("2026-01-01T10:00:00", "2026-01-01T10:03:00", 180, 180):
+        bad(f"out-of-order records mis-measured: {got}, wanted the 10:00..10:03 span")
+    else:
+        ok("out-of-order records are sorted before measuring, not just bounded")
+
+    # 11. The idle threshold must actually be exercised: a gap longer than IDLE is
+    #     time he was away, and must not count as active.
+    p = transcript("idle.jsonl", [
+        usage_msg("2026-01-01T10:00:00", tin=1),
+        usage_msg("2026-01-01T10:01:00", tin=1),
+        usage_msg("2026-01-01T12:00:00", tin=1),   # 119 min gap, far over IDLE=300s
+        usage_msg("2026-01-01T12:00:30", tin=1),
+    ])
+    m, _ = scan(p)
+    if m["active_s"] != 90 or m["duration_s"] != 7230:
+        bad(f"idle gap mishandled: active={m['active_s']} duration={m['duration_s']}, wanted 90/7230")
+    else:
+        ok("a gap longer than IDLE is not counted as active time")
+
+    # 12. A row written at an older column set must be kept AND counted. This is the
+    #     failure the whole schema question rests on: add a column, and every row
+    #     whose transcript has been pruned stays short forever. 37 of 111 real rows
+    #     were already in that state on 2026-10-05, and a reader doing
+    #     zip(header, fields) drops their tail without a word.
+    tsv = t / "ragged.tsv"
+    full = "\t".join(["s-full"] + ["0"] * (len(COLUMNS) - 1))
+    short = "\t".join(["s-short"] + ["0"] * (len(COLUMNS) - 4))
+    tsv.write_text("# comment\n" + "\t".join(COLUMNS) + "\n" + full + "\n" + short + "\n")
+    loaded, stale_n = load_rows(tsv)
+    if stale_n != 1:
+        bad(f"ragged row not counted: stale={stale_n}, wanted 1")
+    if "s-short" not in loaded:
+        bad("ragged row was dropped — history that cannot be re-derived must survive")
+    if "s-full" not in loaded or COLUMNS[0] not in loaded:
+        bad("load_rows lost a good row or the header")
+    ok("a row at an older column set is kept and counted, not silently truncated")
 
     print("selftest passed")
+
+
+def load_rows(tsv):
+    """Load existing rows, and count the ones written at an older column set.
+
+    A session is rewritten as it grows, so a row is replaced rather than appended —
+    but a row whose transcript has been pruned can never be rewritten, and keeps the
+    field count it was born with. Adding a column therefore makes the file ragged,
+    and a reader doing zip(header, fields) truncates the short rows without a word.
+    Measured 2026-10-05: 37 of 111 rows already have no surviving transcript, and the
+    transcript directory lost 27 files in a single day. This counts them out loud
+    rather than letting a renderer quietly drop a third of history.
+    """
+    rows, stale = {}, 0
+    if not tsv.exists():
+        return rows, stale
+    for line in tsv.read_text(encoding="utf8").splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        if not parts or not parts[0]:
+            continue
+        if parts[0] == COLUMNS[0]:          # the header row
+            rows[parts[0]] = line
+            continue
+        if len(parts) != len(COLUMNS):
+            stale += 1
+        rows[parts[0]] = line
+    return rows, stale
 
 
 def main():
@@ -440,15 +507,7 @@ def main():
     tsv = outdir / "sessions.tsv"
     cand = outdir / "candidates.md"
 
-    # A session is rewritten as it grows, so a row is replaced rather than appended.
-    rows = {}
-    if tsv.exists():
-        for line in tsv.read_text(encoding="utf8").splitlines():
-            if line.startswith("#") or not line.strip():
-                continue
-            parts = line.split("\t")
-            if parts:
-                rows[parts[0]] = line
+    rows, stale = load_rows(tsv)
     seen_cand = load_seen(cand, r"\{([^}]+)\}\s*$")
 
     cutoff = days * 86400
@@ -503,6 +562,9 @@ def main():
             text += "\n" + HEADING + "\n\n"
         cand.write_text(text.rstrip("\n") + "\n" + "\n".join(new_cands) + "\n", encoding="utf8")
 
+    if stale:
+        print(f"session-audit: {stale} row(s) at an older column set — their transcripts are gone, "
+              f"so they cannot be re-derived; a reader must not trend across them", file=sys.stderr)
     print(f"session-audit: {touched} session(s) measured, {len(new_cands)} candidate(s) queued")
     return 0
 
