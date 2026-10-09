@@ -138,7 +138,7 @@ Findings get triaged: **must-fix** (blocks the commit, loops back to Phase 2), *
 
 ### Phase 4 — Ship
 
-Verify the change actually runs (not just that tests pass — run the app and look at the thing), then commit with a descriptive message and push. The commit history is the record of what changed and why; future-me reads it.
+Verify the change actually runs (not just that tests pass — run the app and look at the thing), then commit and push. One commit per feature per day, with a subject naming the feature or fix and a body listing the changes: see the Commits section of [`coding-standards.md`](harness/coding-standards.md).
 
 ---
 

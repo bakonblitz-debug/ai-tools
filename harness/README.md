@@ -114,6 +114,7 @@ tiered-model pipeline sized for his actual hardware and workflow.
     │   │                           without one it exits silently and every
     │   │                           session starts blind.
     │   ├── sync-memory.sh        — commit+push context/memory written via Bash
+    │   ├── squash-history.sh     — rewrite a branch into fewer commits with new messages
     │   └── plan-mindset.sh       — UserPromptSubmit hook, plan-tier only
     ├── hermes-AGENTS.md          — copy to ~/.hermes/.hermes/AGENTS.md. Hermes
     │                               has no SessionStart hook, so this is the only

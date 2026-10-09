@@ -64,6 +64,27 @@ one narrow test it reached for the millisecond form unprompted. The size of the 
 than the model. A small lap also caught a bug the spec never mentioned (a future-dated posting counting
 as "recent").
 
+## Commits
+
+His rule, stated 2026-10-09: a log has to be readable weeks later, and one commit per small change buries it.
+
+- **One commit per feature, per project, per day.** Several commits only when the feature has distinct contiguous parts (migrations, models, a queue, events, routing).
+- **Over about 30 files, split by section of the feature.** A single scaffold that cannot be split stays whole.
+- If I commit several times locally while working, I squash them into that shape before the work is done, and always before a push. `harness/scripts/squash-history.sh` does it without touching file content.
+- **Subject:** what the commit is for, feature or fix, in the imperative. **Body:** a list, one full sentence per change.
+- No narrative. No account of mistakes, dead ends or what I had not thought of. No attribution trailer.
+
+```
+Add goalie projections to the picks page
+
+- Add a goalie projection model based on starts.
+- Give goalies their own stat lines on the player card.
+- Score a goalie goal as 15 points, per league rules.
+- Fix the flat form curve for goalies.
+```
+
+The context/memory repo is the one exception: its sync hook commits on its own schedule.
+
 ## Harness systems — the bar for anything the harness itself runs
 
 His standing instruction, 2026-09-29: *"always assume that we want this systematic. Solid as heck,
