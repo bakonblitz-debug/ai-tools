@@ -1,0 +1,698 @@
+<title>Harness Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a wiring diagram. Lanes of files left to right in the order things happen
+   (switched on → fired → called → loaded → run by hand → read → written), a detail panel beside it. */
+:root{
+  --bg:#f2f4f6; --surface:#ffffff; --ink:#17202b; --muted:#5a6573; --line:#d3d9e0; --accent:#0b6e69;
+  --k-entry:#a8455d; --k-hook:#b26b12; --k-helper:#56667a; --k-skill:#6b4fbb; --k-tool:#0b6e69;
+  --k-doc:#2f5f9e; --k-tmpl:#6c7620; --k-out:#8a5a2b;
+  --hit:#fff3c4;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141a; --surface:#161d25; --ink:#e3e8ed; --muted:#93a0ad; --line:#2a343f; --accent:#4fc1b6;
+  --k-entry:#e48aa0; --k-hook:#e6a54f; --k-helper:#9fb0c3; --k-skill:#a98ff0; --k-tool:#4fc1b6;
+  --k-doc:#7ca8e6; --k-tmpl:#b8c45c; --k-out:#d9a46d; --hit:#4a3f12; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141a; --surface:#161d25; --ink:#e3e8ed; --muted:#93a0ad; --line:#2a343f; --accent:#4fc1b6;
+  --k-entry:#e48aa0; --k-hook:#e6a54f; --k-helper:#9fb0c3; --k-skill:#a98ff0; --k-tool:#4fc1b6;
+  --k-doc:#7ca8e6; --k-tmpl:#b8c45c; --k-out:#d9a46d; --hit:#4a3f12; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);margin:0}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1440px;margin:0 auto}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0;letter-spacing:.005em}
+a{color:var(--accent)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding-block:10px}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand h1{font-size:1.35rem}
+.brand span{color:var(--muted);font-size:.85rem}
+nav.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;margin-left:auto;max-width:100%}
+nav.tabs a{padding:6px 11px;border-radius:6px;text-decoration:none;color:var(--muted);font-weight:500;white-space:nowrap;font-size:.92rem}
+nav.tabs a[aria-current="page"]{background:var(--bg);color:var(--ink)}
+nav.tabs a:hover{color:var(--ink)}
+
+main{padding-block:20px 60px}
+.view[hidden]{display:none}
+.lede{max-width:72ch;color:var(--muted);margin:0 0 18px}
+.lede b{color:var(--ink);font-weight:600}
+
+/* ---------- map ---------- */
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.search{flex:1 1 260px;min-width:0;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:0 10px}
+.search input{flex:1;min-width:0;border:0;background:transparent;padding:9px 0;font:inherit;color:var(--ink);outline:none}
+.search kbd{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.legend{display:flex;flex-wrap:wrap;gap:4px}
+.legend button{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 10px;font-size:.8rem;cursor:pointer;color:var(--muted)}
+.legend button[aria-pressed="false"]{opacity:.45;text-decoration:line-through}
+.sw{width:9px;height:9px;border-radius:2px;flex:none;background:var(--c)}
+
+.mapgrid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start}
+#mapwrap{position:relative;min-width:0}
+#wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
+#wires path{fill:none;stroke-width:1.6}
+.lanes{position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:14px}
+.lane{min-width:0}
+.lane h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;align-items:center;gap:7px;margin:0 0 2px}
+.lane p{font-size:.78rem;color:var(--muted);margin:0 0 8px;line-height:1.35}
+.chips{display:flex;flex-direction:column;gap:5px}
+.chip{position:relative;z-index:2;display:flex;align-items:center;gap:7px;text-align:left;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;cursor:pointer;font-family:var(--f-mono);font-size:.78rem;line-height:1.25;transition:opacity .15s,border-color .15s,background .15s}
+.chip .sw{background:var(--c)}
+.chip small{display:block;font-family:var(--f-body);color:var(--muted);font-size:.72rem;margin-top:1px}
+.chip span{min-width:0;overflow-wrap:anywhere}
+.chip:hover{border-color:var(--c)}
+.chip.sel{border-color:var(--c);box-shadow:0 0 0 2px var(--c)}
+.chip.rel{border-color:var(--c)}
+.chip.dim{opacity:.28}
+.chip.hit{background:var(--hit)}
+.chip[hidden]{display:none}
+
+.panel{position:sticky;top:calc(env(safe-area-inset-top,0px) + 70px);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;max-height:calc(100vh - 100px);overflow:auto;min-width:0}
+.panel .empty{color:var(--muted)}
+.panel .empty h2{color:var(--ink);font-size:1.15rem;margin-bottom:6px}
+.panel .kind{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.panel h2{font-family:var(--f-mono);font-weight:500;font-size:1rem;overflow-wrap:anywhere;margin:6px 0 4px}
+.panel .tags{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0 4px}
+.tag{font-size:.74rem;border:1px solid var(--line);border-radius:4px;padding:1px 7px;color:var(--muted)}
+.tag b{color:var(--ink);font-weight:600;font-family:var(--f-mono)}
+.panel h4{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:16px 0 4px;font-family:var(--f-body);font-weight:600}
+.panel p{margin:0}
+.panel pre{background:var(--bg);border-radius:6px;padding:8px 10px;overflow-x:auto;margin:0;font-family:var(--f-mono);font-size:.8rem}
+.rels{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.rels li{display:flex;gap:8px;align-items:baseline;font-size:.84rem}
+.rels .verb{color:var(--muted);flex:none;width:7.5em;font-size:.78rem}
+.link{background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font-family:var(--f-mono);font-size:.82rem;text-align:left;overflow-wrap:anywhere}
+.link:hover{text-decoration:underline}
+.close{display:none}
+
+/* ---------- other views ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0}
+.timeline{display:flex;flex-direction:column;gap:0;max-width:980px}
+.ev{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;padding:14px 0;border-top:1px solid var(--line)}
+.ev:first-child{border-top:0}
+.ev .when{font-family:var(--f-display);font-weight:600;font-size:1.05rem}
+.ev .when small{display:block;font-family:var(--f-body);font-weight:400;font-size:.78rem;color:var(--muted)}
+.ev .what{display:flex;flex-direction:column;gap:8px}
+.step{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:12px;align-items:baseline}
+.step p{margin:0;color:var(--muted);font-size:.9rem}
+.fileb{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;font-family:var(--f-mono);font-size:.78rem;max-width:100%;overflow-wrap:anywhere;text-align:left}
+.fileb:hover{border-color:var(--c)}
+.fileb .sw{background:var(--c)}
+
+.pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;counter-reset:ph}
+.ph h3{font-size:1.05rem;display:flex;gap:8px;align-items:baseline}
+.ph h3::before{counter-increment:ph;content:counter(ph);font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+.ph p{color:var(--muted);font-size:.9rem;margin:6px 0 10px}
+.ph .files{display:flex;flex-wrap:wrap;gap:5px}
+.loopnote{margin-top:14px;color:var(--muted);font-size:.9rem;max-width:80ch}
+
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;padding:9px 12px;border-top:1px solid var(--line);vertical-align:top}
+th{border-top:0;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+td .fileb{margin:1px 3px 1px 0}
+
+.finder{max-width:900px}
+.finder .search{margin-bottom:12px}
+.ans{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;padding:10px 0;border-top:1px solid var(--line);align-items:baseline}
+.ans:first-of-type{border-top:0}
+.ans .q{font-weight:500}
+.ans .a{display:flex;flex-wrap:wrap;gap:5px;align-items:baseline}
+.ans .a em{color:var(--muted);font-size:.85rem;font-style:normal;flex-basis:100%}
+
+.whys{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.why h3{font-size:1.08rem;margin-bottom:6px}
+.why p{margin:0 0 10px;color:var(--muted);font-size:.92rem}
+.why .files{display:flex;flex-wrap:wrap;gap:5px}
+
+@media (max-width: 980px){
+  .mapgrid{grid-template-columns:minmax(0,1fr)}
+  .panel{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:20;max-height:62vh;border-radius:14px 14px 0 0;
+    padding:16px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+    box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+  .panel.closed{display:none}
+  .close{display:block;position:absolute;top:10px;right:max(12px,env(safe-area-inset-right,0px));border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:2px 9px;cursor:pointer}
+  .ev{grid-template-columns:minmax(0,1fr);gap:6px}
+  .step{grid-template-columns:minmax(0,1fr);gap:4px}
+  .ans{grid-template-columns:minmax(0,1fr);gap:6px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="brand"><h1>Harness Map</h1><span>ai-tools · every file, what fires it, what it touches</span></div>
+  <nav class="tabs" aria-label="Views">
+    <a href="#map">Files</a><a href="#session">A session</a><a href="#pipeline">Pipeline</a>
+    <a href="#data">Where data lands</a><a href="#change">I want to change…</a><a href="#why">Why it's built this way</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+
+<section class="view" id="v-map">
+  <p class="lede"><b>Click any file</b> to see what it does, why it exists, what to edit, and its connections (drawn as wires). Lanes run in the order things happen: switched on, fired by Claude Code, called by other scripts, loaded by the model, run by hand, read as rules, and finally the files the harness writes. Rose files live outside this repo.</p>
+  <div class="toolbar">
+    <label class="search"><input id="q" type="search" placeholder="Search files, skills, hooks…" autocomplete="off"><kbd>/</kbd></label>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="mapgrid">
+    <div id="mapwrap"><svg id="wires" aria-hidden="true"></svg><div class="lanes" id="lanes"></div></div>
+    <aside class="panel closed" id="panel" aria-live="polite"></aside>
+  </div>
+</section>
+
+<section class="view" id="v-session" hidden>
+  <p class="lede">What runs, in order, from typing <code>claude</code> to the end of each reply. Every hook is wired in <code>~/.claude/settings.json</code>; <code>scripts/install.py</code> writes that wiring on a new machine. Click a file to open it on the map.</p>
+  <div class="timeline card" id="timeline"></div>
+</section>
+
+<section class="view" id="v-pipeline" hidden>
+  <p class="lede">How the skills chain for a code change. <code>bacon:architect</code> conducts; each skill also works alone. The gates are the point: nothing moves to the next phase until the current one holds.</p>
+  <div class="pipe" id="pipe"></div>
+  <p class="loopnote">Two loops sit inside this: ouroboros sends a flawed plan back to Plan until neither role finds a blocking flaw, and the build gate sends a failing lap back to TDD. Anything out of scope found along the way goes to <code>bacon:handoff</code> as a plan in <code>.plans/</code>, so the current diff stays small.</p>
+</section>
+
+<section class="view" id="v-data" hidden>
+  <p class="lede">Every file the harness writes or reads outside this repo. The context repo is private; this repo holds no personal data. If you are tracing "where did that come from", start here.</p>
+  <div class="tablewrap"><table id="datatable"><thead><tr><th>File</th><th>What it holds</th><th>Written by</th><th>Read by</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section class="view" id="v-change" hidden>
+  <div class="finder">
+    <p class="lede">Pick what you want to change; the answer is the file to open. Type to filter.</p>
+    <label class="search"><input id="cq" type="search" placeholder="e.g. status line, token threshold, picker…" autocomplete="off"></label>
+    <div class="card" id="answers"></div>
+  </div>
+</section>
+
+<section class="view" id="v-why" hidden>
+  <p class="lede">The reasons behind the structure. Each one names the files that carry it out, so you can see the idea in the code.</p>
+  <div class="whys" id="whys"></div>
+</section>
+</main>
+
+<script>
+const KINDS = {
+  entry:{label:"Switched on here", c:"--k-entry"},
+  hook:{label:"Hook script", c:"--k-hook"},
+  helper:{label:"Helper", c:"--k-helper"},
+  skill:{label:"Skill / plugin", c:"--k-skill"},
+  tool:{label:"Run by hand", c:"--k-tool"},
+  doc:{label:"Doc", c:"--k-doc"},
+  tmpl:{label:"Template / config", c:"--k-tmpl"},
+  out:{label:"Written by the harness", c:"--k-out"},
+};
+const LANES = [
+  {kind:"entry", name:"Switched on", desc:"Outside this repo. Where hooks, plugins and the greeting are turned on."},
+  {kind:"hook", name:"Fired by Claude Code", desc:"Run automatically on session start, each prompt, each edit, each reply end."},
+  {kind:"helper", name:"Called by scripts", desc:"Not wired to an event; other scripts run or source them."},
+  {kind:"skill", name:"Loaded by the model", desc:"The bacon plugin. Loaded when a request matches a skill's description."},
+  {kind:"tool", name:"Run by hand", desc:"Checks, installer, utilities. You (or launchd) run these."},
+  {kind:"doc", name:"Read as rules", desc:"Standards, runbooks and setup. What sessions work to."},
+  {kind:"tmpl", name:"Templates & config", desc:"Starting points and machine settings."},
+  {kind:"out", name:"Written by the harness", desc:"Mostly in the private context repo. Generated files are never hand-edited."},
+];
+
+/* id, path, kind, sub (one-line), plus detail fields. */
+const N = [
+  // entry
+  {id:"settings", path:"~/.claude/settings.json", kind:"entry", sub:"hooks · statusLine · plugins",
+   what:"Claude Code's own settings. The <code>hooks</code> block decides which script runs on which event; <code>statusLine</code> runs priority-line.sh; <code>enabledPlugins</code> turns on bacon; <code>autoMemoryDirectory</code> points memory at the context repo; <code>autoCompactWindow</code> compacts long sessions.",
+   why:"Every hook in this repo does nothing until it is wired here. Keeping the wiring in one file makes it easy to see what runs.",
+   edit:"turn a hook on or off, or change its timeout. On a new machine let <code>scripts/install.py</code> write it."},
+  {id:"zshrc", path:"~/.zshrc", kind:"entry", sub:"claude → /bacon:greet wrapper",
+   what:"A shell function: plain <code>claude</code> becomes <code>claude \"/bacon:greet\"</code>; any argument passes straight through. PowerShell has the same in <code>$PROFILE</code>.",
+   why:"Claude cannot speak first in an interactive session, but it can if the session starts with a prompt.",
+   edit:"stop the greeting (delete the function). A terminal tab opened before the edit keeps the old behaviour until <code>source ~/.zshrc</code>.",
+   run:"type claude"},
+  {id:"claudemd", path:"<workspace>/CLAUDE.md", kind:"entry", sub:"rules loaded first, every session",
+   what:"The workspace rules: start-of-session steps, hard rules, how every reply should read, and that code changes go through bacon:architect.",
+   why:"Instructions near the start of context weigh most, so this file stays short and points elsewhere for detail.",
+   edit:"change a rule every session must follow."},
+  // hooks
+  {id:"bootstrap", path:"scripts/claude-bootstrap.sh", kind:"hook", trigger:"SessionStart",
+   sub:"pull context, print the digest",
+   what:"Pulls the private context repo, then prints <code>ORIENT.md</code>, the priority line and the session-todo digest. SessionStart output is injected into the model's context.",
+   why:"Every session starts knowing what is open without anyone asking. Git is optional: without it the pull is skipped and the rest still works.",
+   edit:"change what every session starts knowing.", run:"bash scripts/claude-bootstrap.sh <context-repo>"},
+  {id:"handoffsh", path:"scripts/handoff.sh", kind:"hook", trigger:"SessionStart · UserPromptSubmit",
+   sub:"restore or print a handoff plan",
+   what:"At session start, puts this folder's open <code>handoff-auto-&lt;folder&gt;.md</code> into context (skipped on resume). On a prompt of <code>handoff</code>, <code>handoff &lt;topic&gt;</code> or <code>handoff list</code>, prints the plan.",
+   why:"A hook, not a skill: a skill goes through the model, which can summarise or skip the plan. A hook prints it verbatim.",
+   edit:"change how plans are found or which folder's plan is restored.", run:"type 'handoff' as a prompt"},
+  {id:"mindset", path:"scripts/plan-mindset.sh", kind:"hook", trigger:"UserPromptSubmit (plan mode)",
+   sub:"inject planning mindset, once",
+   what:"In plan mode only, once per session, injects <code>PLANNING-MINDSET.md</code> from the context repo.",
+   why:"There is no plan-mode event, so the prompt hook plus the <code>permission_mode</code> field is the only signal. Once per session keeps ~1.5k words from repeating every prompt.",
+   edit:"change plan-mode priming (edit the mindset file, not the script)."},
+  {id:"wrong", path:"scripts/wrong.sh", kind:"hook", trigger:"UserPromptSubmit",
+   sub:"\"wrong:\" → failure log, verbatim",
+   what:"A prompt starting <code>wrong:</code> is appended to <code>failures-&lt;year&gt;.md</code> before the model sees it. Also usable as <code>! wrong …</code>.",
+   why:"Every other failure count depends on the model choosing to record its own mistakes. This one has no model in the path.",
+   edit:"change the failure-log row format.", run:"wrong: <what went wrong>"},
+  {id:"budget", path:"scripts/context-budget.py", kind:"hook", trigger:"UserPromptSubmit",
+   sub:"past 150k tokens → hand off",
+   what:"Reads the transcript's last usage block. Past the threshold (default 150,000 tokens) it tells the model to write the automatic handoff, and stays quiet while that plan is under 20 minutes old.",
+   why:"Each request pays for the whole conversation, so session length was the biggest cost driver by an order of magnitude.",
+   edit:"change the threshold (<code>--threshold</code>).", run:"python3 scripts/context-budget.py --selftest"},
+  {id:"sync", path:"scripts/sync-memory.sh", kind:"hook", trigger:"PostToolUse (Write|Edit) · Stop",
+   sub:"commit + push the context repo",
+   what:"When a file under <code>context/</code> or <code>memory/</code> changed, regenerates indexes (context-index.sh) and commits and pushes the context repo. Async, so it never blocks a reply.",
+   why:"Every other machine only ever needs <code>git pull</code>. Edits made through Bash are invisible to the hook, so it also runs on Stop.",
+   edit:"change what gets auto-committed.", run:"bash scripts/sync-memory.sh <context-repo>"},
+  {id:"audit", path:"scripts/session-audit.py", kind:"hook", trigger:"Stop",
+   sub:"transcript → metrics row",
+   what:"Writes one row of counts per session to <code>sessions.tsv</code>, and queues only the rare signals that need a verdict (a permission denial, an edit to a generated file) in <code>candidates.md</code>. Never reads your message text.",
+   why:"Counts and verdicts are kept apart: mixing them is how a channel turns into a log nobody reads.",
+   edit:"add a metric or a candidate signal."},
+  {id:"priority", path:"scripts/priority-line.sh", kind:"hook", trigger:"statusLine · SessionStart",
+   sub:"priority progress + next item",
+   what:"Prints one line from the newest roadmap's <code>## Still open</code> checklist: done/total and the next unchecked item. Shown in the status line and at the top of the digest.",
+   why:"The digest lists oldest first and truncates, so a new priority would land in \"+N more\". A dedicated line keeps it in view.",
+   edit:"change the status line.", run:"bash scripts/priority-line.sh --selftest"},
+  // helpers
+  {id:"libroot", path:"scripts/lib-root.sh", kind:"helper", sub:"find the workspace, load .env",
+   what:"Sourced, not run. <code>detect_root</code> picks the workspace for this OS (Mac, WSL, Windows Git Bash), verifies it exists, and loads <code>.env</code> from beside the script.",
+   why:"One tree has three mount points. A digest that looked in the wrong folder and printed nothing would look exactly like \"nothing is open\".",
+   edit:"support a new machine layout (or just set <code>WORKSPACE_ROOT</code> in .env)."},
+  {id:"todo", path:"scripts/session-todo.sh", kind:"helper", sub:"the \"Still open\" digest",
+   what:"Collects open handoffs (<code>## Status</code> open) and <code>## Still open</code> sections of leaves, oldest first, capped at 20. Writes <code>ACTIVE.md</code> as a side effect. <code>--reconcile</code> lists everything with file:line.",
+   why:"The tree is the only store. Index checkboxes are deliberately not a source: they would add 76 false items.",
+   edit:"change which items count as open.", run:"bash scripts/session-todo.sh --reconcile"},
+  {id:"cindex", path:"scripts/context-index.sh", kind:"helper", sub:"generate indexes + ledgers",
+   what:"Writes the generated block of each folder's <code>CONTEXT.md</code> (the list of its leaves) and a <code>LEDGER.md</code> per folder from git history. Mac only.",
+   why:"Hand-kept indexes rotted twice in a month. A generated block cannot rot. The ledger exists because other machines cannot run git on the share but can read a file.",
+   edit:"change index or ledger format.", run:"bash scripts/context-index.sh --selftest"},
+  // skills
+  {id:"market", path:".claude-plugin/marketplace.json", kind:"skill", sub:"the ai-tools marketplace",
+   what:"Declares this repo as a marketplace named <code>ai-tools</code> holding one plugin, <code>bacon</code>.",
+   why:"The standard Claude Code layout, so the plugin installs with the normal commands.",
+   edit:"add a second plugin."},
+  {id:"plugin", path:"plugins/bacon/.claude-plugin/plugin.json", kind:"skill", sub:"plugin manifest",
+   what:"The plugin's name, version and description. Every skill folder beside it is invoked as <code>bacon:&lt;folder&gt;</code>.",
+   why:"Namespacing keeps these skills from colliding with same-named skills from other plugins.",
+   edit:"bump the version."},
+  {id:"architect", path:"plugins/bacon/skills/architect/SKILL.md", kind:"skill", skill:"bacon:architect", sub:"the default path for code changes",
+   what:"Ground → Plan → ouroboros → task specs → TDD build, with a gate between each. Also covers ticket tracking and which model handles each tier.",
+   why:"A conductor, not a planner: it invents no logic of its own, it sequences skills that each work alone. Small fixes included, because \"it's just a small fix\" is where unreviewed assumptions ship.",
+   edit:"change the pipeline's phases or gates."},
+  {id:"ouroboros", path:"plugins/bacon/skills/ouroboros/SKILL.md", kind:"skill", skill:"bacon:ouroboros", sub:"adversarial planning loop",
+   what:"A planner and an attacker revise the plan until neither finds a blocking flaw (premortem attack, regenerate rather than append), then a separate verifier certifies it. Output is <code>PLAN.md</code> with status proven, provisional or deadlocked.",
+   why:"A plan checked only by its author keeps the author's blind spots. Regenerating instead of appending stops the plan becoming a patch pile.",
+   edit:"change how plans are attacked or the convergence rule."},
+  {id:"tdd", path:"plugins/bacon/skills/tdd/SKILL.md", kind:"skill", skill:"bacon:tdd", sub:"red → green → refactor",
+   what:"One failing test per lap, watched to fail for the right reason, then the simplest code to pass, then refactor. Bug fixes start with a test that reproduces the bug. Laravel/Pest section included.",
+   why:"A test written first describes what the code should do; one written after describes what it happens to do.",
+   edit:"change test-first rules or the Pest section."},
+  {id:"handoffsk", path:"plugins/bacon/skills/handoff/SKILL.md", kind:"skill", skill:"bacon:handoff", sub:"park out-of-scope finds",
+   what:"When something out of scope turns up mid-task, write a focused plan in <code>.plans/handoff-*.md</code> (context, issue, scope, approach, verification, status) and delegate it, instead of fixing it inline.",
+   why:"Inline side fixes make diffs unreviewable; silently dropping them loses them. A plan file keeps both the diff and the find.",
+   edit:"change the handoff plan template."},
+  {id:"secondbrain", path:"plugins/bacon/skills/second-brain/SKILL.md", kind:"skill", skill:"bacon:second-brain", sub:"deep engineering mode",
+   what:"Activate → Ground → Plan → Build in verified steps → Verify → Record decisions to memory. Not for quick questions.",
+   why:"Reading before speaking and recording after finishing is what keeps the next session from re-deriving everything.",
+   edit:"change the engineering-mode phases."},
+  {id:"gitconflict", path:"plugins/bacon/skills/git-conflict/SKILL.md", kind:"skill", skill:"bacon:git-conflict", sub:"concurrent-agent conflicts",
+   what:"Understand both sides, reconcile intents, escalate instead of guessing, verify before committing. Has a section for context-repo conflicts, which are about ideas, not code.",
+   why:"Two agents or two machines can edit the same file. Picking a side silently loses one of them.",
+   edit:"change the conflict procedure."},
+  {id:"greet", path:"plugins/bacon/skills/greet/SKILL.md", kind:"skill", skill:"bacon:greet", sub:"session-opening picker",
+   what:"Reads the startup digest and offers at most four options in a fixed order: the priority item, the two newest open handoffs, then \"Show the full list\". No digest → just asks what we are working on.",
+   why:"A choice beats a wall of text, and a fixed order stops the model ranking by its own judgment.",
+   edit:"change what the opening picker offers.", run:"claude \"/bacon:greet\""},
+  {id:"cqskill", path:"plugins/bacon/skills/context-query/SKILL.md", kind:"skill", skill:"bacon:context-query", sub:"latest / since <date>",
+   what:"For \"latest\", \"newest\", \"since &lt;date&gt;\" questions about the context tree. Points the model at context-query.py.",
+   why:"The date is in the file name, never in the prose, so grepping bodies for a date finds nothing. The trigger words come first because the skill index truncates descriptions.",
+   edit:"change when date queries trigger."},
+  {id:"cqpy", path:"plugins/bacon/skills/context-query/context-query.py", kind:"skill", skill:"used by bacon:context-query", sub:"sort leaves by filename date",
+   what:"<code>latest N</code>, <code>since &lt;date&gt;</code> (many date formats), <code>find &lt;fragment&gt;</code>, optionally <code>--under &lt;folder&gt;</code>.",
+   why:"Splitting names on \"-\" grabs the wrong field whenever a slug has a hyphen. The shell pipeline kept failing; a script does not.",
+   edit:"change date parsing.", run:"python3 context-query.py --self-check"},
+  {id:"aitc", path:"plugins/bacon/skills/ai-tools-context/SKILL.md", kind:"skill", skill:"bacon:ai-tools-context", sub:"load/update the tree on request",
+   what:"Pull and read the context tree, or write an outcome as a leaf and sync, only when asked.",
+   why:"For installs (such as a second Claude account) that keep their own session start and should touch this context only on request.",
+   edit:"change the manual load/update steps."},
+  // tools
+  {id:"health", path:"scripts/health-check.sh", kind:"tool", sub:"every harness check",
+   what:"One line per check: workspace mounted, remote reachable, no personal identifiers, digest agreement, context indexes current, ledgers valid, leaves only grow, the map covers every file, and more. SKIP prints the command to run by hand.",
+   why:"Every problem found on one bad day was silent. These checks make that kind of drift announce itself in one command. SKIP never fails, so a fresh clone is not red.",
+   edit:"add a check: write a <code>check_&lt;name&gt;()</code> that echoes one line and returns 0 / 1 / 77. The runner finds it by name.",
+   run:"bash scripts/health-check.sh -v"},
+  {id:"clonetest", path:"scripts/clone-test.sh", kind:"tool", sub:"what does a stranger get?",
+   what:"Clones the repo into a temp folder with none of the owner's infrastructure and runs the health check there. Also guards docs that point at files missing from a clone.",
+   why:"The first installability plan guessed at the first failure and guessed wrong. Measure first.",
+   edit:"add a stranger-facing assertion.", run:"bash scripts/clone-test.sh"},
+  {id:"install", path:"scripts/install.py", kind:"tool", sub:"wire hooks for a new user",
+   what:"Asks three questions (context repo? writable .plans/? budget hook?), writes <code>.env</code>, merges the chosen hook groups into <code>settings.json</code> after a backup, and prints the undo.",
+   why:"The dangerous step is the merge: a stranger's settings already hold their own hooks. <code>merge_hooks()</code> is a pure function with the selftest pointed at it.",
+   edit:"change which hooks are in which group (<code>GROUPS</code>).", run:"python3 scripts/install.py --dry-run"},
+  {id:"monthly", path:"scripts/context-check-monthly.sh", kind:"tool", sub:"monthly tree regression test",
+   what:"Runs the index generator's selftest and the context checks. A red run writes a handoff file.",
+   why:"Failure must show up where it is already read. The digest prints handoffs, so no mail and no new channel.",
+   edit:"add a monthly check.", run:"launchd (see templates/context-check.plist.example)"},
+  {id:"onmac", path:"scripts/on-mac.sh", kind:"tool", sub:"run a command on the Mac over ssh",
+   what:"<code>on-mac.sh &lt;project&gt; &lt;cmd…&gt;</code> runs in that project's folder on the Mac, passing arguments as argv so quoting survives, and propagating the exit code.",
+   why:"Git cannot write objects over the SMB share, so git (and Docker) for the shared tree run on the Mac.",
+   edit:"change the remote host or paths (<code>.env</code>: REMOTE_HOST, REMOTE_WWW).", run:"on-mac.sh notary git status"},
+  {id:"squash", path:"scripts/squash-history.sh", kind:"tool", sub:"rewrite a branch into fewer commits",
+   what:"Each new commit reuses the exact tree of its group's last original commit, so content cannot change and nothing can conflict. Keeps the old tip at <code>backup/pre-squash-&lt;date&gt;</code>.",
+   why:"One commit per feature per day, without the risk of a rebase changing content.",
+   edit:"—", run:"squash-history.sh <repo> <groups-dir>"},
+  {id:"now", path:"bin/now", kind:"tool", sub:"today, and how old a date is",
+   what:"Prints the current date in every form used around the workspace; with dates as arguments, how many days ago each was.",
+   why:"BSD date on macOS has no \"days between\", and mental arithmetic against a stale date kept going wrong.",
+   edit:"add a date format.", run:"now 2026-08-11"},
+  // docs
+  {id:"map-md", path:"docs/harness-map.md", kind:"doc", sub:"this map, for GitHub",
+   what:"The same map as plain Markdown with Mermaid diagrams, readable on GitHub.",
+   why:"GitHub does not render HTML. Both versions are checked by health-check.sh so neither drifts.",
+   edit:"add a row when you add a file."},
+  {id:"map-html", path:"docs/harness-map.html", kind:"doc", sub:"this page",
+   what:"The interactive map you are reading. All data lives in the <code>N</code>, <code>E</code> and view arrays near the bottom of the file.",
+   why:"Connections are easier to follow when you can click through them.",
+   edit:"add an entry to <code>N</code> (and edges to <code>E</code>) when you add a file."},
+  {id:"docsreadme", path:"docs/README.md", kind:"doc", sub:"entry to the harness docs",
+   what:"What to read first if you just cloned this, the layout, how this relates to the private context repo, and status.",
+   why:"A stranger needs the useful half (standards, runbooks, skills) without the local-agent machinery.", edit:"change the reading order."},
+  {id:"harnessmd", path:"docs/harness.md", kind:"doc", sub:"July 2026 design record",
+   what:"The original tiered local-agent pipeline design: tiers, context protocol, worker output gate. Status banners mark what was shelved.",
+   why:"Kept for the reasoning. Most of its mechanics are history; this map describes what runs today.", edit:"—"},
+  {id:"standards", path:"docs/coding-standards.md", kind:"doc", sub:"the floor every session works to",
+   what:"Security, privacy, development (one test per lap), commits, and the 11-point bar for harness systems (generated beats maintained, a check per invariant, selftests, determinism…).",
+   why:"One canonical floor that every agent and every tier works to, so rules are not restated per skill.",
+   edit:"change a coding rule."},
+  {id:"std-php", path:"docs/coding-standards.d/php.md", kind:"doc", sub:"PHP additions", what:"PSR as the baseline; framework conventions win over cleverness.", why:"Language rules load only when that language is in play.", edit:"change a PHP rule."},
+  {id:"std-fe", path:"docs/coding-standards.d/frontend.md", kind:"doc", sub:"frontend additions", what:"Accessibility is a requirement; structure rules.", why:"Language rules load only when that language is in play.", edit:"change a frontend rule."},
+  {id:"ctxdoc", path:"docs/context-and-memory.md", kind:"doc", sub:"how the private repo is wired",
+   what:"The three settings that connect the context repo, its expected layout, and why it must stay private.", why:"Strangers need to know git is optional and that memory must never go in a public repo.", edit:"change context wiring docs."},
+  {id:"setup", path:"docs/setup.md", kind:"doc", sub:"install checklist",
+   what:"Install, log in, Laravel Boost, the feature-dev plugin, the greeting wrapper, troubleshooting.", why:"Everything a new machine needs, in order.", edit:"change setup steps."},
+  {id:"models", path:"docs/models.md", kind:"doc", sub:"which model for which job", what:"Opus plans and reviews, Sonnet builds, Haiku does mechanical work; how to switch and watch usage.", why:"Cost and quality differ by an order of magnitude between tiers.", edit:"change model guidance."},
+  {id:"cheat", path:"docs/cheat-sheet.md", kind:"doc", sub:"one-page summary", what:"The loop, reflexes, keys, models at a glance, token discipline.", why:"The whole playbook on one screen.", edit:"—"},
+  {id:"glossary", path:"docs/glossary.md", kind:"doc", sub:"terms", what:"Agent, skill, TDD, MCP, Boost, plan mode, triage buckets.", why:"Shared words keep the docs short.", edit:"add a term."},
+  {id:"pr-readme", path:"docs/prompting/README.md", kind:"doc", sub:"runbook index", what:"Index of the prompting runbooks and their shared shape.", why:"The workflow says what happens; runbooks say how to prompt it.", edit:"add a runbook."},
+  {id:"pr-intake", path:"docs/prompting/project-intake.md", kind:"doc", sub:"runbook: onboarding", what:"Prompts for getting oriented in an unfamiliar codebase.", why:"Map before you change.", edit:"—"},
+  {id:"pr-bug", path:"docs/prompting/bug-fix.md", kind:"doc", sub:"runbook: bug fix", what:"Reproduce, test first, root cause, review.", why:"Bug fixes are where test-first pays most.", edit:"—"},
+  {id:"pr-feat", path:"docs/prompting/new-feature.md", kind:"doc", sub:"runbook: new feature", what:"Scope, plan, build against the plan, review.", why:"Scope boundaries stop drift.", edit:"—"},
+  {id:"pr-tdd", path:"docs/prompting/tdd.md", kind:"doc", sub:"runbook: test-first", what:"The prompts for a red-green-refactor build.", why:"The runbook beside the tdd skill.", edit:"—"},
+  {id:"pr-refactor", path:"docs/prompting/scoped-refactor.md", kind:"doc", sub:"runbook: refactor", what:"Behaviour-preserving cleanup of one area.", why:"\"Implement\" and \"untangle\" are different tasks.", edit:"—"},
+  {id:"pr-review", path:"docs/prompting/review-triggers.md", kind:"doc", sub:"runbook: review", what:"Running code and security review on demand; triage into must-fix, should-fix, note.", why:"Review is part of building.", edit:"—"},
+  {id:"readme", path:"README.md", kind:"doc", sub:"principles + four phases", what:"Why the workflow looks the way it does, and Plan → Build → Review → Ship.", why:"The front door of the public repo.", edit:"change principles."},
+  // templates & config
+  {id:"taskspec", path:"templates/task-spec-template.md", kind:"tmpl", sub:"task spec for a worker", what:"Goal, acceptance criteria, pattern references, the tier chain.", why:"A worker should get enough context to do the job as well as one agent holding the whole picture.", edit:"change what a task spec asks for."},
+  {id:"spike", path:"templates/spike-template.md", kind:"tmpl", sub:"time-boxed question", what:"One question, a time box, expected outcomes; escalate instead of extending.", why:"Spikes answer a plan's open uncertainty cheaply.", edit:"—"},
+  {id:"plist", path:"templates/context-check.plist.example", kind:"tmpl", sub:"launchd job (macOS)", what:"Copy to ~/Library/LaunchAgents and replace @WORKSPACE_ROOT@ to run the monthly check.", why:"launchd has no WSL or Windows equivalent, so it stays an example.", edit:"change the schedule."},
+  {id:"delegation", path:"config/delegation.yaml", kind:"tmpl", sub:"tier → model (sketch)", what:"Which model handles each tier of the local-agent pipeline. A reviewable sketch, not read live.", why:"The local agent has no per-role delegation schema; this records intent for a human to merge.", edit:"change tier models."},
+  {id:"envex", path:".env.example", kind:"tmpl", sub:"every machine-local setting", what:"WORKSPACE_ROOT, REMOTE_HOST, REMOTE_WWW, CONTEXT_ROOT and more, each with the script that reads it. Copy to <code>.env</code> (gitignored).", why:"Every key is optional: each script has a default and degrades or SKIPs without it.", edit:"add a setting."},
+  // outputs
+  {id:"orient", path:"<context>/ORIENT.md", kind:"out", sub:"start-of-session orientation", what:"Hand-written orientation printed by the bootstrap hook.", why:"The first thing every session reads.", edit:"change the orientation text."},
+  {id:"mindfile", path:"<context>/PLANNING-MINDSET.md", kind:"out", sub:"plan-mode priming", what:"How to think in plan mode; injected once per plan session.", why:"Kept private and separate so it can change without touching the script.", edit:"change plan-mode thinking."},
+  {id:"memory", path:"<context>/memory/", kind:"out", sub:"auto-memory + fact sheets", what:"Preferences, thin pointers into the tree, and one fact sheet per named entity. MEMORY.md is the index loaded each session.", why:"Shared by every install on every machine through git.", edit:"—"},
+  {id:"tree", path:"<context>/context/**/CONTEXT.md", kind:"out", sub:"the context tree", what:"Folder indexes plus leaf files named <code>&lt;slug&gt;-&lt;epoch&gt;-&lt;YYYYMMDD&gt;.md</code>. Leaves only grow; a removed line needs a RETRACTION line. The block between markers is generated.", why:"One git-tracked source of truth for every agent and machine.", edit:"write leaves; never edit the generated block."},
+  {id:"ledger", path:"<context>/context/**/LEDGER.md", kind:"out", sub:"per-folder change history", what:"date | commit | status | file | delta, watermarked with the rev it was built at.", why:"Other machines cannot run git on the share; they can read this.", edit:"never by hand."},
+  {id:"roadmap", path:"<context>/…/agentic-improvement-roadmap-*.md", kind:"out", sub:"the priority checklist", what:"Its <code>## Still open</code> list is the priority project. The newest such file is the one read.", why:"One file owns the list; scripts only read it.", edit:"tick or add priority items."},
+  {id:"sessions", path:"<context>/context/metrics/sessions.tsv", kind:"out", sub:"one row per session", what:"Counts only, no judgement: tools, tokens, interruptions, denials.", why:"The substrate for the planned analytics dashboard.", edit:"never by hand."},
+  {id:"candidates", path:"<context>/context/metrics/candidates.md", kind:"out", sub:"signals waiting for a verdict", what:"Under a <code>## Still open</code> heading, so each keeps surfacing in the digest until promoted to the failure log or struck.", why:"Rare by design; working friction is counted, not queued.", edit:"label or strike items."},
+  {id:"failures", path:"<context>/context/metrics/failures-<year>.md", kind:"out", sub:"failure log", what:"One row per mistake, with who caught it. Rotated by calendar year; topic is a field, not a file.", why:"Write-time classification is what rotted every hand-kept index; one log per year cannot.", edit:"classify rows (optional)."},
+  {id:"plans", path:"<workspace>/.plans/handoff-*.md", kind:"out", sub:"open work plans", what:"Handoff plans with a <code>## Status</code> of open or closed. <code>handoff-auto-&lt;folder&gt;.md</code> is the automatic one.", why:"Work that outlives a session needs a file, not a chat line.", edit:"close one by editing its Status."},
+  {id:"active", path:"<workspace>/ACTIVE.md", kind:"out", sub:"full open-items list", what:"Every open item, uncapped. Regenerated on every digest run.", why:"The digest caps at 20; this holds the rest.", edit:"never by hand."},
+  {id:"transcript", path:"~/.claude/projects/…/<session>.jsonl", kind:"out", sub:"session transcript (Claude Code)", what:"Claude Code's own record of every message and tool call. Kept 10 years (<code>cleanupPeriodDays</code>).", why:"The raw evidence metrics are counted from.", edit:"—"},
+];
+
+/* from, to, verb (from's point of view) */
+const E = [
+  ["settings","bootstrap","fires"],["settings","handoffsh","fires"],["settings","mindset","fires"],["settings","wrong","fires"],
+  ["settings","budget","fires"],["settings","sync","fires"],["settings","audit","fires"],["settings","priority","fires"],["settings","plugin","enables"],
+  ["zshrc","greet","opens with"],["install","settings","writes"],["install","envex","copies to .env"],
+  ["bootstrap","priority","runs"],["bootstrap","todo","runs"],["bootstrap","orient","prints"],["bootstrap","tree","pulls"],
+  ["todo","libroot","sources"],["todo","plans","reads"],["todo","tree","reads"],["todo","candidates","reads"],["todo","active","writes"],
+  ["priority","libroot","sources"],["priority","roadmap","reads"],
+  ["handoffsh","plans","reads"],["budget","transcript","reads"],["budget","plans","asks for"],
+  ["mindset","mindfile","injects"],["wrong","failures","appends"],
+  ["sync","cindex","runs"],["sync","tree","commits"],["sync","memory","commits"],
+  ["cindex","tree","generates"],["cindex","ledger","generates"],
+  ["audit","transcript","reads"],["audit","sessions","writes"],["audit","candidates","writes"],
+  ["health","libroot","sources"],["health","todo","runs"],["health","cindex","runs"],["health","clonetest","runs selftest"],
+  ["health","tree","checks"],["health","active","checks"],["health","map-md","checks"],["health","map-html","checks"],
+  ["clonetest","health","runs"],["monthly","libroot","sources"],["monthly","cindex","runs"],["monthly","health","runs"],["monthly","plans","writes on failure"],
+  ["plist","monthly","schedules"],["libroot","envex","loads (.env)"],["onmac","envex","reads (.env)"],
+  ["market","plugin","lists"],
+  ["plugin","architect","contains"],["plugin","ouroboros","contains"],["plugin","tdd","contains"],["plugin","handoffsk","contains"],
+  ["plugin","secondbrain","contains"],["plugin","gitconflict","contains"],["plugin","greet","contains"],["plugin","cqskill","contains"],["plugin","aitc","contains"],
+  ["architect","ouroboros","calls"],["architect","tdd","calls"],["architect","handoffsk","calls"],["architect","taskspec","uses"],["architect","spike","uses"],
+  ["architect","delegation","uses"],["architect","standards","works to"],["architect","onmac","uses"],
+  ["tdd","standards","works to"],["handoffsk","plans","writes"],["secondbrain","tree","reads"],["secondbrain","memory","writes"],
+  ["greet","bootstrap","reads digest of"],["greet","plans","reads"],["greet","active","reads"],
+  ["cqskill","cqpy","runs"],["cqpy","tree","reads"],["aitc","tree","reads/writes"],["aitc","sync","runs"],["gitconflict","tree","resolves"],
+  ["claudemd","architect","requires"],["claudemd","standards","points to"],
+  ["readme","docsreadme","links"],["docsreadme","harnessmd","links"],["docsreadme","map-md","links"],["map-md","map-html","links"],
+  ["standards","std-php","includes"],["standards","std-fe","includes"],["setup","zshrc","documents"],["ctxdoc","settings","documents"],
+  ["pr-readme","pr-intake","lists"],["pr-readme","pr-bug","lists"],["pr-readme","pr-feat","lists"],["pr-readme","pr-tdd","lists"],
+  ["pr-readme","pr-refactor","lists"],["pr-readme","pr-review","lists"],["pr-tdd","tdd","runbook for"],["readme","pr-readme","links"],
+  ["harnessmd","delegation","describes"],["readme","cheat","links"],["readme","setup","links"],["readme","models","links"],["readme","glossary","links"],
+];
+const INV = {"fires":"fired by","enables":"enabled by","opens with":"opened by","writes":"written by","copies to .env":"copied by","runs":"run by",
+  "prints":"printed by","pulls":"pulled by","sources":"sourced by","reads":"read by","asks for":"requested by","injects":"injected by","appends":"appended by",
+  "commits":"committed by","generates":"generated by","runs selftest":"selftest run by","checks":"checked by","writes on failure":"written by (on failure)",
+  "schedules":"scheduled by","loads (.env)":"loaded by","reads (.env)":"read by","lists":"listed by","contains":"part of","calls":"called by","uses":"used by",
+  "works to":"followed by","reads digest of":"digest read by","reads/writes":"read/written by","resolves":"resolved by","requires":"required by",
+  "points to":"pointed to by","links":"linked from","includes":"included by","documents":"documented by","runbook for":"runbook","describes":"described by"};
+
+const byId = Object.fromEntries(N.map(n=>[n.id,n]));
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const cvar = k=>`var(${KINDS[k].c})`;
+const fileBtn = id=>{const n=byId[id]; return `<button class="fileb" style="--c:${cvar(n.kind)}" data-go="${id}"><i class="sw"></i>${esc(n.path)}</button>`;};
+
+/* ---------- map ---------- */
+const shown = Object.fromEntries(Object.keys(KINDS).map(k=>[k,true]));
+let sel = null;
+
+function renderLegend(){
+  $("#legend").innerHTML = Object.entries(KINDS).map(([k,v])=>
+    `<button aria-pressed="${shown[k]}" data-kind="${k}" style="--c:${cvar(k)}"><i class="sw"></i>${v.label}</button>`).join("");
+}
+function renderLanes(){
+  $("#lanes").innerHTML = LANES.map(l=>{
+    const items = N.filter(n=>n.kind===l.kind);
+    return `<div class="lane" data-lane="${l.kind}"><h3><i class="sw" style="--c:${cvar(l.kind)}"></i>${l.name}</h3><p>${l.desc}</p><div class="chips">${
+      items.map(n=>`<button class="chip" id="c-${n.id}" data-id="${n.id}" style="--c:${cvar(n.kind)}"><span>${esc(n.path.replace(/^plugins\/bacon\/skills\//,"skills/"))}<small>${esc(n.skill && n.kind==="skill" && n.skill.startsWith("bacon:") ? n.skill : n.sub)}</small></span></button>`).join("")
+    }</div></div>`;}).join("");
+}
+function relsOf(id){
+  const out=[], inn=[];
+  for(const [a,b,v] of E){ if(a===id) out.push([v,b]); if(b===id) inn.push([INV[v]||v,a]); }
+  return {out,inn};
+}
+function renderPanel(){
+  const p=$("#panel");
+  if(!sel){
+    p.innerHTML = `<div class="empty"><h2>Pick a file</h2><p>Click any file on the map. You'll get what it does, why it exists, what to edit, how to run it, and every file it connects to.</p><h4>Start with</h4><ul class="rels"><li>${fileBtn("settings")}</li><li>${fileBtn("bootstrap")}</li><li>${fileBtn("architect")}</li><li>${fileBtn("health")}</li></ul></div>`;
+    return;
+  }
+  const n=byId[sel], {out,inn}=relsOf(sel);
+  const tags=[];
+  if(n.skill) tags.push(`<span class="tag">skill <b>${esc(n.skill)}</b></span>`);
+  if(n.trigger) tags.push(`<span class="tag">fires on <b>${esc(n.trigger)}</b></span>`);
+  const list = arr=>arr.length?`<ul class="rels">${arr.map(([v,id])=>`<li><span class="verb">${esc(v)}</span><button class="link" data-go="${id}">${esc(byId[id].path)}</button></li>`).join("")}</ul>`:"";
+  p.innerHTML = `<button class="close" data-close>Close</button>
+    <span class="kind"><i class="sw" style="--c:${cvar(n.kind)}"></i>${KINDS[n.kind].label}</span>
+    <h2>${esc(n.path)}</h2>
+    ${tags.length?`<div class="tags">${tags.join("")}</div>`:""}
+    <h4>What it does</h4><p>${n.what}</p>
+    ${n.why?`<h4>Why it exists</h4><p>${n.why}</p>`:""}
+    ${n.edit && n.edit!=="—"?`<h4>Edit it to…</h4><p>${n.edit}</p>`:""}
+    ${n.run?`<h4>Run it</h4><pre>${esc(n.run)}</pre>`:""}
+    ${out.length?`<h4>It touches</h4>${list(out)}`:""}
+    ${inn.length?`<h4>Touched by</h4>${list(inn)}`:""}`;
+}
+function applyFilter(){
+  const q=$("#q").value.trim().toLowerCase();
+  const related = sel ? new Set([sel, ...E.filter(e=>e[0]===sel||e[1]===sel).flatMap(e=>[e[0],e[1]])]) : null;
+  for(const n of N){
+    const el=document.getElementById("c-"+n.id);
+    el.hidden = !shown[n.kind];
+    const hay=(n.path+" "+(n.skill||"")+" "+n.sub+" "+(n.trigger||"")+" "+n.what).toLowerCase();
+    const hit = q && hay.includes(q);
+    el.classList.toggle("hit", !!hit);
+    el.classList.toggle("sel", n.id===sel);
+    el.classList.toggle("rel", !!related && related.has(n.id) && n.id!==sel);
+    el.classList.toggle("dim", (related && !related.has(n.id)) || (!related && q && !hit));
+  }
+  document.querySelectorAll(".lane").forEach(l=>{ l.hidden = !shown[l.dataset.lane]; });
+  drawWires();
+}
+function drawWires(){
+  const svg=$("#wires"); svg.innerHTML="";
+  if(!sel || $("#v-map").hidden) return;
+  const wrap=$("#mapwrap").getBoundingClientRect();
+  const box=id=>{const el=document.getElementById("c-"+id); if(!el||el.hidden) return null; const r=el.getBoundingClientRect(); return {l:r.left-wrap.left,r:r.right-wrap.left,y:r.top-wrap.top+r.height/2,cx:r.left-wrap.left+r.width/2};};
+  const a=box(sel); if(!a) return;
+  const col=getComputedStyle(document.documentElement).getPropertyValue(KINDS[byId[sel].kind].c).trim();
+  for(const [f,t] of E){
+    if(f!==sel && t!==sel) continue;
+    const other = f===sel ? t : f, b=box(other); if(!b) continue;
+    let x1,x2,d;
+    if(Math.abs(a.cx-b.cx)<40){ x1=a.r; x2=b.r; const bend=Math.max(x1,x2)+46; d=`M${x1} ${a.y} C${bend} ${a.y},${bend} ${b.y},${x2} ${b.y}`; }
+    else { const right=b.cx>a.cx; x1=right?a.r:a.l; x2=right?b.l:b.r; const dx=(x2-x1)/2; d=`M${x1} ${a.y} C${x1+dx} ${a.y},${x2-dx} ${b.y},${x2} ${b.y}`; }
+    const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d",d); p.setAttribute("stroke",col); p.setAttribute("stroke-opacity",".75");
+    if(f!==sel) p.setAttribute("stroke-dasharray","4 4");
+    svg.appendChild(p);
+  }
+}
+function select(id){
+  sel = (sel===id) ? null : id;
+  renderPanel(); applyFilter();
+  $("#panel").classList.toggle("closed", !sel && matchMedia("(max-width: 980px)").matches);
+}
+function go(id){
+  if(location.hash!=="#map"){ location.hash="map"; }
+  sel=null; setTimeout(()=>{ select(id); document.getElementById("c-"+id)?.scrollIntoView({block:"center",behavior:"smooth"}); }, 30);
+}
+
+/* ---------- session ---------- */
+const SESSION = [
+  {when:"You type claude", note:"shell", steps:[["zshrc","The wrapper turns bare claude into claude \"/bacon:greet\". Any argument passes straight through."]]},
+  {when:"SessionStart", note:"once, before the first reply", steps:[
+    ["bootstrap","git pull on the context repo, then prints ORIENT.md, the priority line and the open-items digest into context."],
+    ["priority","Builds the \"Priority fixes N/M · next: …\" line."],
+    ["todo","Builds the Still-open digest and rewrites ACTIVE.md."],
+    ["handoffsh","If this folder has an open automatic handoff, prints it so work resumes where it stopped."]]},
+  {when:"First prompt", note:"/bacon:greet", steps:[["greet","Reads the digest and offers a picker: priority item, two newest handoffs, full list."]]},
+  {when:"UserPromptSubmit", note:"every prompt, before the model sees it", steps:[
+    ["mindset","Plan mode only, once: injects the planning mindset."],
+    ["wrong","Prompt starts with \"wrong:\" → appended to the failure log verbatim."],
+    ["budget","Context past 150k tokens → tells the model to write handoff-auto-<folder>.md."],
+    ["handoffsh","Prompt is \"handoff [topic]\" → prints that plan."]]},
+  {when:"Model works", note:"skills load on match", steps:[
+    ["architect","Any code change routes here; it calls ouroboros, then tdd."],
+    ["cqskill","\"Latest / since\" questions about the tree."],
+    ["handoffsk","Out-of-scope find → a plan file instead of an inline fix."]]},
+  {when:"PostToolUse", note:"after each Write or Edit", steps:[["sync","Changed file under context/ or memory/ → regenerate indexes, commit, push (async)."]]},
+  {when:"Stop", note:"end of each reply", steps:[
+    ["sync","Again, catching edits made through Bash that PostToolUse cannot see."],
+    ["audit","Transcript → one metrics row; rare signals → candidates.md."]]},
+  {when:"Always", note:"terminal footer", steps:[["priority","The status line: same priority line, kept on screen."]]},
+  {when:"Monthly", note:"launchd", steps:[["monthly","Regression test for the generated indexes; a red run writes a handoff the digest will show."]]},
+];
+function renderSession(){
+  $("#timeline").innerHTML = SESSION.map(s=>`<div class="ev"><div class="when">${esc(s.when)}<small>${esc(s.note)}</small></div><div class="what">${
+    s.steps.map(([id,t])=>`<div class="step"><div>${fileBtn(id)}</div><p>${esc(t)}</p></div>`).join("")}</div></div>`).join("");
+}
+
+/* ---------- pipeline ---------- */
+const PIPE = [
+  {h:"Ground", p:"Read the code and the context tree before saying anything. Every claim gets a file:line.", f:["architect","tree","secondbrain"]},
+  {h:"Plan", p:"Write PLAN.md: approach, what already exists, open questions, risks.", f:["architect","standards"]},
+  {h:"Prove", p:"ouroboros attacks the plan until no blocking flaw is left, then a separate verifier certifies it.", f:["ouroboros"]},
+  {h:"Break down", p:"Turn the proven plan into task specs (or a spike for an open question).", f:["taskspec","spike","delegation"]},
+  {h:"Build", p:"One failing test per lap, simplest code to pass, refactor while green.", f:["tdd","pr-tdd","standards"]},
+  {h:"Gate", p:"Tests pass, diff read, standards met. A failing lap goes back to Build.", f:["health","pr-review"]},
+  {h:"Record", p:"Durable outcomes go into the context tree as leaves; sync commits them.", f:["tree","sync"]},
+];
+function renderPipe(){
+  $("#pipe").innerHTML = PIPE.map(s=>`<div class="card ph"><h3>${esc(s.h)}</h3><p>${esc(s.p)}</p><div class="files">${s.f.map(fileBtn).join("")}</div></div>`).join("");
+}
+
+/* ---------- data ---------- */
+function renderData(){
+  const rows = N.filter(n=>n.kind==="out");
+  $("#datatable tbody").innerHTML = rows.map(n=>{
+    const w=E.filter(e=>e[1]===n.id && /writ|gener|append|asks|commit|inject|print/.test(e[2])).map(e=>e[0]);
+    const r=E.filter(e=>e[1]===n.id && /read|check|resolv/.test(e[2])).map(e=>e[0]);
+    const by = arr=>[...new Set(arr)].map(fileBtn).join("") || `<span style="color:var(--muted)">by hand</span>`;
+    return `<tr><td>${fileBtn(n.id)}</td><td>${n.what}</td><td>${by(w)}</td><td>${by(r)}</td></tr>`;
+  }).join("");
+}
+
+/* ---------- change finder ---------- */
+const CHANGE = [
+  ["What every session knows at the start",["bootstrap","orient"],"The bootstrap prints ORIENT.md; edit that text first."],
+  ["The opening picker",["greet"],""],
+  ["Turn the greeting off",["zshrc"],"Delete the claude() function, then open a new terminal tab."],
+  ["Which items count as \"still open\"",["todo"],"Section headings it matches are listed in the script's header."],
+  ["The status line",["priority","roadmap"],"The line reads the newest roadmap's ## Still open list."],
+  ["When the automatic handoff kicks in (token threshold)",["budget"],"--threshold, default 150000."],
+  ["Which handoff is restored at start",["handoffsh","plans"],""],
+  ["What gets auto-committed to the context repo",["sync"],""],
+  ["Add a session metric",["audit","sessions"],""],
+  ["Add a health check",["health"],"Write check_<name>(); echo one line; return 0, 1 or 77 (skip)."],
+  ["When a skill triggers",["architect","greet","cqskill"],"The description: line at the top of that skill's SKILL.md decides it."],
+  ["The planning pipeline's phases",["architect","ouroboros"],""],
+  ["How plans are attacked",["ouroboros"],""],
+  ["Test-first rules",["tdd","pr-tdd"],""],
+  ["A coding rule",["standards","std-php","std-fe"],""],
+  ["Plan-mode priming",["mindfile","mindset"],"Edit the mindset file; the script only injects it."],
+  ["Hook wiring on a new machine",["install","settings"],"GROUPS in install.py decides which hooks come together."],
+  ["A machine-local path or ssh host",["envex","libroot","onmac"],"Copy .env.example to .env and set the key."],
+  ["Record a mistake of mine",["wrong","failures"],"Start a prompt with wrong: and it is logged verbatim."],
+  ["The context-tree index format",["cindex","tree"],"The generated block is rewritten on every sync; never edit it by hand."],
+  ["This map",["map-html","map-md"],"Add the file to both; health-check.sh fails until you do."],
+];
+function renderChange(){
+  const q=$("#cq").value.trim().toLowerCase();
+  const rows=CHANGE.filter(([t,ids,n])=>!q || (t+" "+n+" "+ids.map(i=>byId[i].path).join(" ")).toLowerCase().includes(q));
+  $("#answers").innerHTML = rows.length ? rows.map(([t,ids,n])=>`<div class="ans"><div class="q">${esc(t)}</div><div class="a">${ids.map(fileBtn).join("")}${n?`<em>${esc(n)}</em>`:""}</div></div>`).join("")
+    : `<p style="color:var(--muted);margin:0">Nothing matches. Try the search on the Files tab, which looks inside every description.</p>`;
+}
+
+/* ---------- why ---------- */
+const WHY = [
+  ["Two repos: public tooling, private memory","Context and memory pile up personal data: hosts, emails, project names. Keeping them in a private repo lets this one be public, as a portfolio and as something others can clone. A health check fails if a personal identifier leaks in.",["ctxdoc","sync","health","memory"]],
+  ["Hooks for anything word for word, skills for judgment","A skill goes through the model, which may summarise, skip or \"improve\" what it was given. A hook prints straight into context. So restoring a plan is a hook, and planning is a skill.",["handoffsh","wrong","ouroboros"]],
+  ["Generated beats maintained","Hand-kept indexes rotted twice in a month with a check already watching. Indexes, ledgers and ACTIVE.md are generated, and a check fails when they drift. This map is hand-written, so a check makes sure it names every file.",["cindex","todo","ledger","active","health"]],
+  ["A rule without a check is only a preference","Each invariant has a check, and each script carries a --selftest on synthetic data (synthetic because the real data holds personal details). A check that scans nothing fails, so an empty result cannot pass as a clean one.",["health","standards","budget","priority"]],
+  ["SKIP is not FAIL","Someone without a second machine, a local model or a context repo sees SKIP with the command to run by hand. A fresh clone should never show failures it can do nothing about.",["health","clonetest","install"]],
+  ["One tree, three mount points","The workspace is ~/www on the Mac, M:\\ on Windows and /mnt/www in WSL. lib-root.sh finds it and verifies it, because an empty digest from the wrong folder looks exactly like \"nothing is open\".",["libroot","envex"]],
+  ["Git runs on the Mac","Git cannot write objects over the SMB share. Other machines run git through ssh, and LEDGER.md exists so they can still read history as plain files.",["onmac","ledger","sync"]],
+  ["Failures surface where they're already read","A monthly check that fails writes a handoff file, which the startup digest prints. A new channel nobody reads is a silent failure in practice.",["monthly","plans","todo","candidates"]],
+  ["The measured party doesn't write the measurement","wrong.sh records complaints verbatim before the model sees them; session-audit.py counts from raw transcript evidence. A metric the model maintains is one it can improve by doing less bookkeeping.",["wrong","audit","transcript"]],
+  ["Short context is cheaper and better","Every request pays for the whole conversation so far. Past 150k tokens the session hands off and restarts small, with the plan restored automatically.",["budget","handoffsh","plans"]],
+  ["A conductor that owns no logic","architect only sequences skills that each work alone, so any one can be used, changed or replaced without touching the others.",["architect","ouroboros","tdd","handoffsk"]],
+  ["Short always-loaded rules, detail behind pointers","Instructions early in context weigh most and every token is paid on every request. CLAUDE.md and MEMORY.md stay short and point to files read only when needed.",["claudemd","memory","standards"]],
+];
+function renderWhy(){
+  $("#whys").innerHTML = WHY.map(([h,p,f])=>`<div class="card why"><h3>${esc(h)}</h3><p>${esc(p)}</p><div class="files">${f.map(fileBtn).join("")}</div></div>`).join("");
+}
+
+/* ---------- routing + events ---------- */
+const VIEWS=["map","session","pipeline","data","change","why"];
+function route(){
+  const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "map";
+  VIEWS.forEach(x=>{ $("#v-"+x).hidden = x!==v; });
+  document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current", a.getAttribute("href")==="#"+v?"page":"false"));
+  if(v==="map") requestAnimationFrame(drawWires);
+}
+document.addEventListener("click",e=>{
+  const g=e.target.closest("[data-go]"); if(g){ go(g.dataset.go); return; }
+  const c=e.target.closest(".chip"); if(c){ select(c.dataset.id); return; }
+  const k=e.target.closest("[data-kind]"); if(k){ shown[k.dataset.kind]=!shown[k.dataset.kind]; renderLegend(); applyFilter(); return; }
+  if(e.target.closest("[data-close]")){ sel=null; renderPanel(); applyFilter(); $("#panel").classList.add("closed"); }
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="/" && document.activeElement.tagName!=="INPUT"){ e.preventDefault(); location.hash="map"; $("#q").focus(); }
+  if(e.key==="Escape" && sel){ sel=null; renderPanel(); applyFilter(); $("#panel").classList.add("closed"); }
+});
+$("#q").addEventListener("input",applyFilter);
+$("#cq").addEventListener("input",renderChange);
+addEventListener("hashchange",route);
+addEventListener("resize",()=>requestAnimationFrame(drawWires));
+if(window.ResizeObserver) new ResizeObserver(()=>drawWires()).observe($("#lanes"));
+
+renderLegend(); renderLanes(); renderPanel(); applyFilter();
+renderSession(); renderPipe(); renderData(); renderChange(); renderWhy();
+if(!matchMedia("(max-width: 980px)").matches) $("#panel").classList.remove("closed");
+route();
+</script>

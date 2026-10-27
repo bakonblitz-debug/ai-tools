@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local Claude session/state (keep it out of the public repo)
+.claude/
+
+# context/memory live in the private ai-tools-context repo, never here.
+# The old harness/context and harness/memory symlinks were removed 2026-10-27.
+harness/
+*.bak
+
+# Machine-local config: real paths/hostnames, not secrets, but personal.
+# .env.example is the committed, generic template — this is not it.
+/.env
+
+# Workspace folders that sit beside this repo. Ignored here so a copy or a
+# symlink of either can never be committed to the public repo.
+projects/
+one-offs/
+__pycache__/
