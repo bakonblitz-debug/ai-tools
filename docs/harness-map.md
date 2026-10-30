@@ -156,7 +156,7 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | File | Called by | What it does |
 |---|---|---|
 | `scripts/lib-root.sh` | session-todo, health-check, priority-line, context-check-monthly | Sourced, not run. Finds the workspace root on each OS and loads `.env`. |
-| `scripts/session-todo.sh` | claude-bootstrap, health-check | The "Still open" digest: open handoffs plus `## Still open` sections of leaves, oldest first. Also writes `ACTIVE.md`. |
+| `scripts/session-todo.sh` | claude-bootstrap, health-check | The "Still open" digest: open handoffs newest first (by file date), then `## Still open` sections of leaves, stalest first (age of the oldest bullet, from git blame). Also writes `ACTIVE.md`. |
 | `scripts/context-index.sh` | sync-memory, health-check, context-check-monthly | Generates each folder's index block in `CONTEXT.md` and a `LEDGER.md` from git history. Never hand-edit those parts. |
 
 ### Tools you run by hand (or a scheduler runs)

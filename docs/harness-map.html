@@ -287,7 +287,7 @@ const N = [
    why:"One tree has three mount points. A digest that looked in the wrong folder and printed nothing would look exactly like \"nothing is open\".",
    edit:"support a new machine layout (or just set <code>WORKSPACE_ROOT</code> in .env)."},
   {id:"todo", path:"scripts/session-todo.sh", kind:"helper", sub:"the \"Still open\" digest",
-   what:"Collects open handoffs (<code>## Status</code> open) and <code>## Still open</code> sections of leaves, oldest first, capped at 20. Writes <code>ACTIVE.md</code> as a side effect. <code>--reconcile</code> lists everything with file:line.",
+   what:"Collects open handoffs (<code>## Status</code> open, newest first by file date), then <code>## Still open</code> sections of leaves, stalest first (age of the oldest bullet, from git blame), capped at 20. Writes <code>ACTIVE.md</code> as a side effect. <code>--reconcile</code> lists everything with file:line.",
    why:"The tree is the only store. Index checkboxes are deliberately not a source: they would add 76 false items.",
    edit:"change which items count as open.", run:"bash scripts/session-todo.sh --reconcile"},
   {id:"cindex", path:"scripts/context-index.sh", kind:"helper", sub:"generate indexes + ledgers",

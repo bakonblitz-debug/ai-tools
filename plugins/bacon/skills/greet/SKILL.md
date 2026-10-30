@@ -8,13 +8,14 @@ description: >
 
 # Greet
 
-Open the session with a choice, not a wall of text. One picker, then wait.
+Open the session with a choice, not a wall of text. One picker, then wait. Steps 1–3 make no tool call
+other than the picker: everything they need is already in the digest.
 
 ## 1. Find the digest
 
 Look in this session's context for the startup digest that a SessionStart hook may have added:
 a line like `Priority fixes N/M · next: <item>` and a `Still open` list whose lines name files such as
-`plans/handoff-<topic>.md   Status: open`.
+`plans/handoff-<topic>.md   open — <status text>`.
 
 **No digest in context** (a fresh install without the hooks): ask in plain text, "What are we working on
 today?" and stop. No picker, no tool calls.
@@ -23,13 +24,11 @@ today?" and stop. No picker, no tool calls.
 
 1. **The priority item** — the `next:` part of the priority line. Label: its first few words. Description:
    the full item.
-2. **Open handoffs, newest first** — the `plans/handoff-*.md` lines marked open in the digest. Order them
-   by modification time with one command, `ls -t <workspace>/.plans/handoff-*.md` (`<workspace>` is the
-   folder holding `.plans/`: `~/www` on a Mac, `M:\` on Windows, `/mnt/www` in WSL), and take the first
-   two that the digest lists as open. Label: the topic from the file name, in words
-   (`handoff-pc-boot-bsod.md` → "PC boot crashes"). Description: the text after `open` on its status line,
-   shortened.
-3. **"Show the full list"** — always last. Description: every open item, oldest first.
+2. **Open handoffs** — the first two `plans/handoff-*.md` lines in the digest. The digest already lists
+   them newest first, so take them in that order; run no command to re-sort or re-check them. Label: the
+   topic from the file name, in words (`handoff-pc-boot-bsod.md` → "PC boot crashes"). Description: the
+   text after `open` on that line, shortened.
+3. **"Show the full list"** — always last. Description: every open item, as `ACTIVE.md` lists it.
 
 Fewer items than that → fewer options, but always at least the last one. Do not invent options that are
 not in the digest, and do not rank by your own judgment: the order above is the rule.

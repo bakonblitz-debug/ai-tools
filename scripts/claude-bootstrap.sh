@@ -47,8 +47,9 @@ fi
 ORIENT="$CTX/ORIENT.md"
 [ -r "$ORIENT" ] && cat "$ORIENT"
 
-# What is still open across the workspace, oldest first. Reads the tree only; never
-# fatal, never slow (measured ~0.1s on the Mac). See session-todo.sh for the sources
+# What is still open: handoffs newest first, then the stalest open sections. Reads the tree and
+# its git history; never
+# fatal, never slow (measured ~1s on the Mac, mostly git blame). See session-todo.sh for the sources
 # and for why the CONTEXT.md "- [ ]" checkboxes are deliberately not one of them.
 # The priority project goes first: the digest below is oldest-first and truncates,
 # which is exactly where a new priority would disappear.

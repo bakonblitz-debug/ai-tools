@@ -8,11 +8,10 @@
 #   session-todo.sh --selftest            assert-based self-check, no workspace needed
 #
 # Sources, in reliability order (see <root>/.plans/handoff-session-start-todo.md):
-#   1. HANDOFF.md      QUEUED / BLOCKED item headings. RETIRED 2026-09-04 — the file is now a
-#                      tombstone and matches nothing. Kept so a revived queue would still be read.
+#   1. <root>/.plans/ then ~/.claude/plans/ handoff-*.md, "## Status" = open (share first),
+#      aged from mtime, newest first
 #   2. leaf "## Still open" / "## What is left to do" / "## [N.] Open …" sections.
 #      "… before a/any call" is excluded: rehearsal notes, not work anyone owes today
-#   3. <root>/.plans/ then ~/.claude/plans/ handoff-*.md, "## Status" = open (share first)
 #   4. ponytail: comments — cited in --reconcile, harvested by /ponytail-debt, not here
 #
 # CONTEXT.md "- [ ]" index checkboxes are deliberately NOT a source. They carry a
@@ -25,27 +24,46 @@ set -u
 # not the workspace, and the "+N more" tail is the signal to go look at why.
 MAX=${TODO_MAX:-20}
 
+# "<epoch>\t<age>". Sort on the epoch (exact); print the age, in minutes under an hour, hours
+# under a day, days after.
+age_fmt() {
+  s=$(( $(date +%s) - $1 ))
+  if   [ $s -lt 3600 ];  then printf '%d\t%dm' "$1" $(( s / 60 ))
+  elif [ $s -lt 86400 ]; then printf '%d\t%dh' "$1" $(( s / 3600 ))
+  else printf '%d\t%dd' "$1" $(( s / 86400 )); fi
+}
+# `date -r FILE` reads mtime on BSD (Mac) and GNU (WSL).
+mtime_age() { age_fmt "$(date -r "$1" +%s)"; }
+
+# Age of lines LO..HI of FILE = when the oldest of them was last written, from git blame
+# (~0.05s a file). Outside git, or with no bullets to blame, it falls back to the file's mtime.
+lines_age() {
+  e=$([ -n "$2" ] && git -C "$(dirname "$1")" blame --line-porcelain -L "$2,$3" -- "$(basename "$1")" 2>/dev/null |
+      awk '/^committer-time / { print $2 }' | sort -n | head -1)
+  if [ -n "$e" ]; then age_fmt "$e"; else mtime_age "$1"; fi
+}
+
 # --- one line per file with an open section: "<age>\t<path>\t<section> (<n>)" ---
-# ponytail: age comes from the <slug>-<epoch>-<date>.md filename, so files predating
-# that convention print no age. Parse dates out of prose if that ever matters.
+# Age is when the section's OLDEST bullet was last written (git blame), so one fresh line cannot
+# hide stale ones. ponytail: a bulk rewrite of lines resets their blame; list that commit in a
+# .git-blame-ignore-revs and pass --ignore-revs-file if it ever happens.
 scan_leaves() {
   # career/ is job postings: applications, letters, per-company prep. Their status lives in
-  # jobhunt.db, not here — his call 2026-09-04: postings are not todo items. The termination
-  # dossier is a legal claim, not a posting, so it stays. JobHunt's own features and fixes
-  # live under agentic-apps/ and are unaffected.
+  # jobhunt.db, not here — his call 2026-09-04: postings are not todo items. A career/ folder
+  # holding a .digest-keep file (a legal claim, not a posting) stays; the marker lives in the
+  # private tree so this script names no folder. JobHunt's own features and fixes live under
+  # agentic-apps/ and are unaffected.
+  local keep=() k
+  while IFS= read -r k; do keep+=(! -path "${k%/.digest-keep}/*"); done \
+    < <(find "$1" -path '*/career/*' -name .digest-keep -type f 2>/dev/null)
   find "$1" -name '*.md' -type f \
-       ! \( -path '*/career/*' -a ! -path '*/career/simplyphp-termination/*' \) \
-       2>/dev/null | LC_ALL=C sort | xargs awk -v now="$(date +%s)" '
-    function flush(   age) {
+       ! \( -path '*/career/*' ${keep[@]+"${keep[@]}"} \) \
+       2>/dev/null | LC_ALL=C sort | xargs awk '
+    function flush() {
       if (file == "" || sec == "") return
-      age = (epoch > 0) ? int((now - epoch) / 86400) "d" : "  ?"
-      printf "%s\t%s\t%s (%d)\n", age, file, sec, cnt
+      printf "%s\t%s (%d)\t%s\t%s\n", file, sec, cnt, lo, hi
     }
-    FNR == 1 {
-      flush(); file = FILENAME; sec = ""; cnt = 0; epoch = 0
-      if (match(FILENAME, /-[0-9]{9,11}-[0-9]{8}\.md$/))
-        epoch = substr(FILENAME, RSTART + 1, RLENGTH - 13) + 0
-    }
+    FNR == 1 { flush(); file = FILENAME; sec = ""; cnt = 0; lo = hi = "" }
     /^## / {
       if (sec != "") { flush(); sec = "" }
       # "… before a/any call" is rehearsal that fires only if someone calls — not
@@ -53,13 +71,34 @@ scan_leaves() {
       # the leading "N." allows "## 3. Open actions" (the termination dossier) through
       if ($0 ~ /^## ([0-9]+\. )?(Still open|Still blocked|What is left to do|Open($|[ ,.—:]))/ &&
           $0 !~ /before (a|any) call/) {
-        sec = $0; sub(/^## /, "", sec); cnt = 0
+        sec = $0; sub(/^## /, "", sec); cnt = 0; lo = hi = ""
       } else sec = ""
       next
     }
-    sec != "" && /^[[:space:]]*([-*]|[0-9]+\.)[[:space:]]/ { cnt++ }
+    sec != "" && /^[[:space:]]*([-*]|[0-9]+\.)[[:space:]]/ { cnt++; if (lo == "") lo = FNR; hi = FNR }
     END { flush() }
-  ' /dev/null   # keeps awk off stdin if find matched nothing (GNU/BSD xargs differ)
+  ' /dev/null |  # /dev/null keeps awk off stdin if find matched nothing (GNU/BSD xargs differ)
+  while IFS="$(printf '\t')" read -r f sec lo hi; do
+    printf '%s\t%s\t%s\n' "$(lines_age "$f" "$lo" "$hi")" "$f" "$sec"
+  done | LC_ALL=C sort -n | cut -f2-   # oldest bullet first: the most neglected section leads
+}
+
+# one line per open handoff: "<age>d\tplans/<name>\t<status line>", newest first.
+# Age is the file's mtime: handoffs carry no filename epoch, and greet needs them ordered.
+# `date -r FILE` reads mtime on both BSD (Mac) and GNU (WSL) date.
+scan_handoffs() {
+  seen=" "
+  for d in "$@"; do
+    for f in "$d"/handoff-*.md; do
+      [ -r "$f" ] || continue
+      b=${f##*/}
+      case $seen in *" $b "*) continue ;; esac
+      seen="$seen$b "
+      st=$(awk '/^## Status/ { s = 1; next } s && NF { print; exit }' "$f")
+      case $st in [Oo]pen*) ;; *) continue ;; esac
+      printf '%s\tplans/%s\t%s\n' "$(mtime_age "$f")" "$b" "$st"
+    done
+  done | LC_ALL=C sort -rn | cut -f2-   # newest first
 }
 
 # ponytail: fixed shortlist of root docs + the tree, not a workspace-wide grep. Widen it
@@ -95,23 +134,70 @@ selftest() {
   case $out in
     *drift*) echo "FAIL: prose 'NOT YET FIXED' must not become an item: $out"; exit 1 ;;
   esac
-  # age is derived, not stat'd: 2026-07-30 is well over 30 days before any plausible run
+  # age is the last edit, not the filename epoch: leaves only grow, so an append is progress
+  # and a 2026-07-30 note touched 2 days ago is 2 days idle, not 90
+  touch -t "$(date -v-2d +%Y%m%d%H%M 2>/dev/null || date -d '2 days ago' +%Y%m%d%H%M)" "$t/tree/sub/thing-1785467066-20260730.md"
+  out=$(scan_leaves "$t/tree")
   age=${out%%$'\t'*}
-  [ "${age%d}" -gt 30 ] 2>/dev/null || { echo "FAIL: age not derived from filename: $age"; exit 1; }
+  [ "$age" = 2d ] || { echo "FAIL: leaf age must be time since last edit, got: $age"; exit 1; }
+
+  # in git, a section is as old as its OLDEST bullet: one fresh line must not hide four stale ones
+  g="$t/repo"; mkdir -p "$g"; git -C "$g" init -q
+  printf '# z\n\n## Still open\n\n- stale one\n- stale two\n\n## Notes\n\n- not open\n' > "$g/z.md"
+  git -C "$g" add z.md
+  GIT_COMMITTER_DATE='2026-01-01T00:00:00' git -C "$g" -c user.name=t -c user.email=t@t \
+    commit -qm old --date=2026-01-01T00:00:00
+  printf '# z\n\n## Still open\n\n- stale one\n- stale two\n- fresh\n\n## Notes\n\n- not open\n' > "$g/z.md"
+  git -C "$g" -c user.name=t -c user.email=t@t commit -qam new
+  b=$(scan_leaves "$g")
+  case $b in
+    [0-9]*"d	$g/z.md	Still open (3)") [ "${b%%d*}" -gt 100 ] ||
+      { echo "FAIL: section age must come from its oldest bullet: $b"; exit 1; } ;;
+    *) echo "FAIL: section age must come from its oldest bullet, in days: $b"; exit 1 ;;
+  esac
 
   # career/ is job postings and must not reach the digest at all (his call 2026-09-04),
-  # but the termination dossier lives under career/ and is a legal claim, not a posting.
-  mkdir -p "$t/tree/career/simplyphp-termination"
+  # except a folder he marks with .digest-keep (a legal claim, say). The marker lives in the
+  # private tree, so this public script names no folder.
+  mkdir -p "$t/tree/career/a-claim" "$t/tree/career/b-prep"
+  touch "$t/tree/career/a-claim/.digest-keep"
   printf '# acme\n\n## Open\n\n- owes an answer\n' > "$t/tree/career/acme-dev-1785467066-20260730.md"
+  printf '# b\n\n## Open\n\n- prep\n' > "$t/tree/career/b-prep/notes-1785467066-20260730.md"
   printf '# d\n\n## 3. Open actions\n\n- file claim B\n' \
-    > "$t/tree/career/simplyphp-termination/dossier-1785467066-20260730.md"
+    > "$t/tree/career/a-claim/dossier-1785467066-20260730.md"
   c=$(scan_leaves "$t/tree")
   case $c in
-    *acme*) echo "FAIL: a job posting reached the digest: $c"; exit 1 ;;
+    *acme*|*b-prep*) echo "FAIL: a job posting reached the digest: $c"; exit 1 ;;
   esac
   case $c in
-    *simplyphp-termination/dossier*) ;;
-    *) echo "FAIL: the termination dossier must survive the career/ exclusion: $c"; exit 1 ;;
+    *a-claim/dossier*) ;;
+    *) echo "FAIL: a career/ folder marked .digest-keep must reach the digest: $c"; exit 1 ;;
+  esac
+
+  # handoffs: aged from mtime (they carry no filename epoch), newest first, status text kept,
+  # closed ones dropped, and the share copy wins over a same-named local one.
+  mkdir -p "$t/share" "$t/local"
+  printf '# a\n\n## Status\n\nopen — waiting on the PC\n' > "$t/share/handoff-old.md"
+  printf '# b\n\n## Status\n\nopen\n' > "$t/share/handoff-new.md"
+  printf '# c\n\n## Status\n\ndone\n' > "$t/share/handoff-closed.md"
+  printf '# d\n\n## Status\n\nopen — LOCAL DUPLICATE\n' > "$t/local/handoff-new.md"
+  touch -t 202601010000 "$t/share/handoff-old.md"
+  # same day, newer by minutes, but sorts first by name: order must follow the clock, not the name
+  printf '# e\n\n## Status\n\nopen\n' > "$t/share/handoff-aaa.md"
+  touch -t "$(date -v-10M +%Y%m%d%H%M 2>/dev/null || date -d '10 minutes ago' +%Y%m%d%H%M)" "$t/share/handoff-aaa.md"
+  h=$(scan_handoffs "$t/share" "$t/local")
+  [ "$(printf '%s\n' "$h" | grep -c .)" -eq 3 ] || { echo "FAIL: expected 3 open handoffs:"; echo "$h"; exit 1; }
+  case $(printf '%s\n' "$h" | sed -n 2p) in
+    1[01]"m	plans/handoff-aaa.md	open") ;;   # 10 minutes old reads as minutes, not 0d
+    *) echo "FAIL: same-day handoffs must sort by mtime and show minutes:"; echo "$h"; exit 1 ;;
+  esac
+  case $(printf '%s\n' "$h" | head -1) in
+    "0m	plans/handoff-new.md	open") ;;
+    *) echo "FAIL: newest handoff must come first, aged 0m, share copy winning:"; echo "$h"; exit 1 ;;
+  esac
+  case $(printf '%s\n' "$h" | tail -1) in
+    [0-9]*"d	plans/handoff-old.md	open — waiting on the PC") ;;
+    *) echo "FAIL: old handoff must be aged and keep its status text:"; echo "$h"; exit 1 ;;
   esac
 
   # the real WSL2-HANDOFF §11b shape: an assertion left standing 11 days after the fix.
@@ -205,37 +291,13 @@ fi
 TREE=$WWW/context/context
 PLANS=$HOME/.claude/plans
 
-# Structured signals first — these are already dated and triaged by a machine, so they
-# outrank prose regardless of age. They carry no filename epoch, which is why they cannot
-# just be sorted in with the rest.
-structured=$(
-  # 1. HANDOFF.md — QUEUED / BLOCKED item headings only; DONE and the usage doc are noise.
-  # Retired 2026-09-04, so this normally yields nothing; .plans/ below replaced it. Its failure
-  # mode is worth remembering: three blocks headed DONE hid unfixed defects for 19 days, because
-  # this grep reads the heading and the heading described the pass, not its findings.
-  [ -r "$WWW/HANDOFF.md" ] && grep -nE '^\*\*[0-9]+[a-z]*\..*(QUEUED|BLOCKED)' "$WWW/HANDOFF.md" |
-    sed 's/[*_`]//g; s/^\([0-9]*\):/  ?\tHANDOFF.md:\1\t/'
-
-  # 2. this skill's own handoffs. ponytail: $HOME-local, so a hook running over ssh sees
-  # the remote machine's plans, not the calling machine's. Sync them if that ever bites.
-  # Two locations on purpose. $HOME/.claude/plans is machine-LOCAL, and this hook runs
-  # on the Mac over ssh — so a handoff written on the PC is invisible from there, which
-  # defeats the point of parking it. <root>/.plans is on the share and both machines see
-  # it; prefer that for anything meant to resurface. Dedup by basename, share wins.
-  seen=""
-  for f in "$WWW"/.plans/handoff-*.md "$PLANS"/handoff-*.md; do
-    [ -r "$f" ] || continue
-    b=${f##*/}
-    printf '%s\n' "$seen" | grep -qx -- "$b" && continue
-    seen="$seen
-$b"
-    grep -A1 '^## Status' "$f" | grep -qi '^open' &&
-      printf '  ?\tplans/%s\tStatus: open\n' "$b"
-  done
-)
+# Handoffs first, newest first: they are parked work someone meant to resume, so they outrank
+# prose regardless of age. Share first, then $HOME (machine-local, invisible over ssh); dedup
+# by basename, share wins.
+structured=$(scan_handoffs "$WWW/.plans" "$PLANS")
 
 # 4. leaf open sections, oldest first, aged from the filename
-aged=$([ -d "$TREE" ] && scan_leaves "$TREE" | sed "s|\t$TREE/|\t|" | LC_ALL=C sort -rn)
+aged=$([ -d "$TREE" ] && scan_leaves "$TREE" | sed "s|\t$TREE/|\t|")   # already oldest edit first
 
 items=$(printf '%s\n%s\n' "$structured" "$aged" | grep .)
 total=$(printf '%s\n' "$items" | grep -c .)
@@ -265,25 +327,20 @@ if [ "$MODE" = digest ] && [ -w "$WWW" ]; then
     echo "resolving it in the file named below; finished index lines move to the \`COMPLETED.md\`"
     echo "beside their \`CONTEXT.md\`."
     echo
-    echo "$total open items, oldest first."
+    echo "$total open items: handoffs newest first, then context notes stalest first (age of the oldest open bullet)."
     echo
     # Every row is a LINK, not a path. The whole point of this file is to drill down without
     # opening an index first, so a row you cannot click is a row that failed at its one job.
-    # Link targets differ by source, hence the four rules: the tree is under context/context/,
-    # .plans/ prints without its dot, HANDOFF.md carries a :line suffix.
+    # Link targets differ by source: the tree is under context/context/, .plans/ prints without its dot.
     printf '%s\n' "$items" | awk -F'\t' '
       { age = $1; p = $2; sec = $3
         gsub(/^ +| +$/, "", age); gsub(/^ +| +$/, "", p)
-        target = p
-        sub(/:[0-9]+$/, "", target)
-        if (target ~ /^plans\//)            target = "." target
-        else if (target !~ /^HANDOFF/) target = "context/context/" target
+        target = (p ~ /^plans\//) ? "." p : "context/context/" p
         label = p
-        printf "- **%s** — [%s](%s)  \n  %s\n", (age == "?" ? "undated" : age), label, target, sec
+        printf "- **%s** — [%s](%s)  \n  %s\n", age, label, target, sec
       }'
     echo
-    echo "Age comes from the leaf filename (\`<slug>-<epoch>-<date>.md\`); **undated** means the file"
-    echo "predates that convention. The trailing count is how many bullets that open section holds."
+    echo "Age is time since the file was last changed. The trailing count is how many bullets that open section holds."
   } > "$WWW/ACTIVE.md" 2>/dev/null || true
 fi
 
