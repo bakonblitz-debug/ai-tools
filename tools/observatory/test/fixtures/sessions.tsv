@@ -1,0 +1,8 @@
+# Written by a synthetic fixture
+# session	date	started	ended	duration_s	active_s	project	assistant_msgs	interruptions	tool_errors	denials	generated_edits	tokens_in	tokens_out	cache_read	cache_create	thinking	models	result_bytes	context_read_bytes	code_read_bytes
+s-single	2026-10-20	2026-10-20T10:00:00	2026-10-20T11:00:00	3600	1800	-Users-alice-www-projects-epicerie	10	1	2	0	0	100	50	1000	200	5	claude-opus-5-5	0	0	0
+s-single/ag1	2026-10-20	2026-10-20T10:00:00	2026-10-20T11:00:00	3600	1800	-Users-alice-www-projects-epicerie	10	1	2	0	0	100	5	1000	200	5	claude-opus-5-5	0	0	0
+s-mixed	2026-10-20	2026-10-20T10:00:00	2026-10-20T11:00:00	3600	1800	-Users-alice-www	10	1	2	0	0	100	30	1000	200	5	claude-opus-5-5,claude-haiku-4-5	0	0	0
+s-syn	2026-10-20	2026-10-20T10:00:00	2026-10-20T11:00:00	3600	1800	-private-tmp	10	1	2	0	0	100	0	1000	200	5	<synthetic>	0	0	0
+s-ragged	2026-10-20	2026-10-20T10:00:00	2026-10-20T11:00:00	3600	1800	M--	10	1	2	0	0	100	20	1000	200	5	claude-opus-5-5	0	0
+session	date	started	ended	duration_s	active_s	project	assistant_msgs	interruptions	tool_errors	denials	generated_edits	tokens_in	tokens_out	cache_read	cache_create	thinking	models	result_bytes	context_read_bytes	code_read_bytes

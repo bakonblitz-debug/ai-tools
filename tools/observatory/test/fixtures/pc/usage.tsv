@@ -1,0 +1,3 @@
+# cost_usd = the whole request at PRICES as of 2026-10-28.
+# session	date	project	agent	activity	requests	output	thinking	cost_usd	effort
+p1	2026-10-20	M--projects-epicerie	main	coding	3	10	0	0.3	low

@@ -1,0 +1,12 @@
+services:
+  observatory:
+    build: .
+    ports:
+      - "127.0.0.1:${UI_PORT:-3400}:3000"
+    volumes:
+      - ${METRICS_DIR}:/data/metrics:ro
+      - ${DB_DIR}:/data/db
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+    restart: unless-stopped

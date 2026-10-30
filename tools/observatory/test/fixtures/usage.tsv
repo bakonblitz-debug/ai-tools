@@ -1,0 +1,7 @@
+# cost_usd = the whole request at PRICES as of 2026-10-28.
+# session	date	project	agent	activity	requests	output	thinking	cost_usd	effort
+s-single	2026-10-20	-Users-alice-www-projects-epicerie	main	coding	4	50	5	0.5	high
+s-single	2026-10-20	-Users-alice-www-projects-epicerie	main	answering	1	10	0	0.1
+s-mixed	2026-10-20	-Users-alice-www	headless	answering	1	1	0	0.1	
+s-mixed/ag1	2026-10-20	-Users-alice-www	subagent:Explore	coding	2	10	0	0.2	medium
+session	date	project	agent	activity	requests	output	thinking	cost_usd	effort
