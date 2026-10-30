@@ -18,6 +18,10 @@ Measured 2026-09-29: emitting every `is_error` tool result produced 60 candidate
 in two days — failed greps, no-match globs, "file has not been read yet". Those are
 working friction, not failures, so they are COUNTED and not queued.
 
+Also written beside sessions.tsv: usage.tsv (output tokens and dollars by activity), inputs.tsv
+(new input tokens by source) and hooks.tsv (runs, errors, duration per session/event/hook; hook
+tokens are in inputs.tsv under source `hook`).
+
 PRIVACY: user message text is never read or stored. Interruptions are counted,
 never quoted. Only tool-side output is excerpted, capped at 120 characters.
 
@@ -62,6 +66,7 @@ def excerpt(text):
 
 USAGE_COLUMNS = ["session", "date", "project", "agent", "activity", "requests", "output", "thinking", "cost_usd"]
 INPUT_COLUMNS = ["session", "date", "project", "agent", "source", "kind", "tokens", "images"]
+HOOK_COLUMNS = ["session", "date", "project", "agent", "event", "hook", "runs", "errors", "duration_ms"]
 HARNESS_TOOLS = {"ToolSearch", "AskUserQuestion", "Artifact", "ArtifactComments", "ArtifactData",
                  "SubagentHandback", "SendMessage", "ScheduleWakeup", "ExitPlanMode", "EnterPlanMode",
                  "EnterWorktree", "ExitWorktree", "Monitor", "CronCreate", "CronDelete", "CronList",
@@ -269,9 +274,19 @@ def writes_generated(cmd):
     return None
 
 
+def hook_id(att):
+    """Script basename in a hook's command, else its hookName (plugin hooks show a status text)."""
+    for tok in str(att.get("command", "")).replace('"', " ").replace("'", " ").split():
+        if tok.endswith((".sh", ".py", ".js", ".cmd")):
+            return re.split(r"[/\\]", tok)[-1]
+    # hookName often already starts with the event ("SessionStart:startup"): drop it, the kind adds it back.
+    return str(att.get("hookName") or "?").removeprefix(f"{att.get('hookEvent')}:")
+
+
 def scan(path):
     """Return (metrics_row_dict, [candidate tuples]) for one transcript."""
     m = dict.fromkeys(COLUMNS, 0)
+    m["hooks"] = {}  # (event, hook) -> [runs, errors, duration_ms]
     m["session"] = path.stem
     sub = path.parent.name == "subagents"  # <project>/<session>/subagents/<agent>.jsonl
     m["project"] = (path.parents[2] if sub else path.parent).name
@@ -345,7 +360,24 @@ def scan(path):
                 elif block.get("type") == "text":
                     pending.append([("own", rid), len(block.get("text", "")) / CHARS_PER_TOKEN, 0])
         elif rec.get("type") == "attachment":
-            pending.append([("harness", "attachment"), len(json.dumps(rec.get("attachment"))) / CHARS_PER_TOKEN, 0])
+            att = rec.get("attachment")
+            kind = att.get("type") if isinstance(att, dict) else None
+            if str(kind).startswith("hook_") or kind == "async_hook_response":
+                # Its text sits in content AND stdout; measure the text once, never the JSON.
+                body = next((att[k] for k in ("content", "stdout", "response") if att.get(k)), "")
+                pending.append([("hook", f"{att.get('hookEvent')}:{hook_id(att)}"),
+                                (len(body) if isinstance(body, str) else len(json.dumps(body))) / CHARS_PER_TOKEN, 0])
+                if att.get("hookEvent") != "Stop":  # Stop runs are counted from stop_hook_summary only
+                    run = m["hooks"].setdefault((att.get("hookEvent"), hook_id(att)), [0, 0, 0])
+                    run[0] += 1
+                    run[1] += att.get("exitCode") not in (None, 0)
+                    run[2] += att.get("durationMs") or 0
+            else:
+                pending.append([("harness", kind or "other"), len(json.dumps(att)) / CHARS_PER_TOKEN, 0])
+        elif rec.get("subtype") == "stop_hook_summary":
+            for info in rec.get("hookInfos") or []:
+                m["hooks"].setdefault(("Stop", hook_id(info)), [0, 0, 0])[0] += 1
+            m["hooks"].setdefault(("Stop", "*"), [0, 0, 0])[1] += len(rec.get("hookErrors") or [])
         elif rec.get("type") == "user":
             c = msg.get("content")
             # Length only: his text is never stored. Injected text (reminders, command
@@ -461,30 +493,27 @@ def scan(path):
         cr = u.get("cache_read_input_tokens", 0) or 0
         new = (u.get("cache_creation_input_tokens", 0) or 0) + (u.get("input_tokens", 0) or 0)
         m["carry"] += cr
-        if prev_ctx is None:
-            book(("session start", "-"), new)
-        else:
-            rebuild = min(new, max(0, prev_ctx - cr))
-            if rebuild:
-                book(("cache rebuild", "-"), rebuild)
-            rest = new - rebuild
-            parts = []
-            for key, est, img in arrivals.get(rid, []):
-                if key[0] == "own":  # a response's own text and tool inputs, re-sent next turn
-                    kinds = calls.get(key[1]) or {"answering"}
-                    parts += [((k, "own output"), est / len(kinds), 0) for k in kinds]
-                else:
-                    parts.append((key, est, img))
-            est_total = sum(p[1] for p in parts)
-            # Visible parts are booked at their estimated size, scaled down when the bill
-            # is smaller (large tool outputs are truncated before they are sent). What
-            # the bill holds beyond them never reached the transcript: measured
-            # 2026-10-28 at about 1-1.5k tokens per request (framing, reminders).
-            scale = min(1, rest / est_total) if est_total else 0
-            for key, est, img in parts:
-                book(key, est * scale, img)
-            if rest > est_total:
-                book(("harness", "not in transcript"), rest - est_total)
+        rebuild = 0 if prev_ctx is None else min(new, max(0, prev_ctx - cr))
+        if rebuild:
+            book(("cache rebuild", "-"), rebuild)
+        rest = new - rebuild
+        parts = []
+        for key, est, img in arrivals.get(rid, []):
+            if key[0] == "own":  # a response's own text and tool inputs, re-sent next turn
+                kinds = calls.get(key[1]) or {"answering"}
+                parts += [((k, "own output"), est / len(kinds), 0) for k in kinds]
+            else:
+                parts.append((key, est, img))
+        est_total = sum(p[1] for p in parts)
+        # Visible parts are booked at their estimated size, scaled down when the bill
+        # is smaller (large tool outputs are truncated before they are sent). What
+        # the bill holds beyond them never reached the transcript: measured
+        # 2026-10-28 at about 1-1.5k tokens per request (framing, reminders).
+        scale = min(1, rest / est_total) if est_total else 0
+        for key, est, img in parts:
+            book(key, est * scale, img)
+        if rest > est_total:
+            book(("session start", "-") if prev_ctx is None else ("harness", "not in transcript"), rest - est_total)
         prev_ctx = cr + new
     m["models"] = ",".join(sorted(models)) or "-"
     tag = re.match(r"\[hook:([\w.-]+)\]", first_prompt or "")
@@ -707,12 +736,13 @@ def selftest():
     total_new = 20005 + 1100 + 1600 + 3000
     if round(sum(v[0] for v in m["inputs"].values())) != total_new:
         bad(f"input split does not add up to the new input {total_new}: {got}")
-    if got.get(("session start", "-")) != (20005, 0):
-        bad(f"first request not booked as session start: {got}")
+    # r1 is split like any request: his 400-char prompt (100) is booked as a prompt, the rest is session start.
+    if got.get(("session start", "-")) != (19905, 0) or got.get(("prompt", "-")) != (100, 0):
+        bad(f"first request should be prompt 100 + session start 19905: {got}")
     if got.get(("cache rebuild", "-")) != (2705, 0):
         bad(f"cache rebuild after the 2h gap should be (21105+1600) - 20000 = 2705: {got}")
-    if not 285 <= got.get(("harness", "attachment"), (0,))[0] <= 295:
-        bad(f"the rest of r4 (295, less r3's short reply) should go to the hook attachment: {got}")
+    if not 285 <= got.get(("harness", "other"), (0,))[0] <= 295:
+        bad(f"the rest of r4 (295, less r3's short reply) should go to the typeless attachment: {got}")
     # Billed beyond what the transcript shows (about 1-1.5k per real request: framing,
     # injected reminders) is its own line, not spread over the visible parts. Here:
     # r2 1100 - ~1007 visible, r3 1600 - ~1537.
@@ -733,6 +763,41 @@ def selftest():
     if m["carry"] != 20005 + 21105 + 20000:
         bad(f"carry should be the sum of cache reads: {m['carry']}")
     ok("new input is split into session start, cache rebuild, and what arrived by source and file type")
+
+    # 1e2. Attachments are named. A hook attachment carries its text twice (content and
+    #      stdout) plus metadata, so it is measured by the text, once, under (hook,
+    #      <event>:<script>); any other attachment is harness/<its type>.
+    def booked(*atts):
+        recs = [usage_msg("2026-01-01T10:00:00", tin=10, rid="r1")] + [
+            {"type": "attachment", "timestamp": "2026-01-01T10:00:01", "attachment": a} for a in atts
+        ] + [usage_msg("2026-01-01T10:00:02", cread=10, ccreate=5000, rid="r2")]
+        mm, _ = scan(transcript("att.jsonl", recs))
+        return {k: round(v[0]) for k, v in mm["inputs"].items()}, mm
+    got, _ = booked({"type": "skill_listing", "content": "s" * 400})
+    if not 100 <= got.get(("harness", "skill_listing"), 0) <= 200:
+        bad(f"a skill_listing attachment should be booked under harness/skill_listing: {got}")
+    got, _ = booked({"type": "hook_success", "hookEvent": "SessionStart", "hookName": "SessionStart:startup",
+                     "command": "bash ~/ai-tools/hooks/claude-bootstrap.sh --x", "content": "x" * 400,
+                     "stdout": "x" * 400, "stderr": "", "exitCode": 0, "durationMs": 5})
+    if got.get(("hook", "SessionStart:claude-bootstrap.sh")) != 100:
+        bad(f"a hook attachment should book its text once (100) under hook/SessionStart:claude-bootstrap.sh: {got}")
+    got, _ = booked({"type": "hook_success", "hookEvent": "SessionStart", "hookName": "SessionStart:startup",
+                     "command": "Loading ponytail mode...", "content": "x" * 40})
+    if ("hook", "SessionStart:startup") not in got:
+        bad(f"a plugin hook with a status-text command should be named by its hookName: {got}")
+    got, _ = booked({"type": "hook_additional_context", "hookEvent": "UserPromptSubmit",
+                     "hookName": "plan-mindset", "content": ["y" * 400]})
+    if not 100 <= got.get(("hook", "UserPromptSubmit:plan-mindset"), 0) <= 110:
+        bad(f"a list content should be measured in characters, not items: {got}")
+    # The first request is split like any other: its arrivals at their estimate, the rest is session start.
+    mm, _ = scan(transcript("first.jsonl", [
+        {"type": "attachment", "timestamp": "2026-01-01T10:00:00", "attachment": {
+            "type": "hook_success", "hookEvent": "SessionStart", "command": "bash /x/boot.sh", "content": "x" * 400}},
+        usage_msg("2026-01-01T10:00:01", ccreate=5000, rid="r1")]))
+    got = {k: round(v[0]) for k, v in mm["inputs"].items()}
+    if got != {("hook", "SessionStart:boot.sh"): 100, ("session start", "-"): 4900}:
+        bad(f"the first request should split its hook (100) from session start (4900): {got}")
+    ok("attachments are named: hooks by event and script (text counted once), the rest by type")
 
     # 1f. Dollar cost per request from the dated price table: cache writes priced by
     #     their 5m/1h split, date-suffixed model ids match their family, Haiku 5.5 bills
@@ -988,6 +1053,55 @@ def selftest():
     finally:
         PROJECTS, sys.argv = orig_projects, orig_argv
 
+    # 9b. hooks.tsv: runs, errors and duration per (session, event, hook). A hook attachment is
+    #     one run (error = exitCode not 0); Stop runs come from stop_hook_summary alone, so the
+    #     Stop attachment of the same hook is not a second run. Rewritten per session, and a
+    #     session's legacy harness/attachment rows are replaced by the named ones.
+    def att(ts, **a):
+        return {"type": "attachment", "timestamp": ts, "attachment": a}
+    hproj = t / "projects2" / "projH"
+    hproj.mkdir(parents=True)
+    (hproj / "hk1.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        usage_msg("2026-01-02T10:00:00", tin=10, rid="r1"),
+        att("2026-01-02T10:00:01", type="hook_success", hookEvent="SessionStart", hookName="SessionStart:startup",
+            command="bash /x/a.sh SECRET-CMD", content="SECRET-CONTENT", stdout="SECRET-CONTENT",
+            stderr="", exitCode=0, durationMs=50),
+        att("2026-01-02T10:00:02", type="hook_success", hookEvent="SessionStart", hookName="SessionStart:startup",
+            command="bash /x/a.sh SECRET-CMD", content="", stdout="", stderr="SECRET-ERR", exitCode=1, durationMs=30),
+        {"type": "system", "subtype": "stop_hook_summary", "timestamp": "2026-01-02T10:00:03", "hookCount": 2,
+         "hookInfos": [{"command": "bash /x/s1.sh SECRET-CMD"}, {"command": "python3 /x/s2.py"}],
+         "hookErrors": ["SECRET-ERR"], "hookAdditionalContext": []},
+        att("2026-01-02T10:00:04", type="async_hook_response", hookEvent="Stop", hookName="Stop",
+            command="bash /x/s1.sh", response={"k": "SECRET-CONTENT"}),
+        usage_msg("2026-01-02T10:00:05", cread=10, ccreate=5000, rid="r2"),
+    ]) + "\n", encoding="utf8")
+    hctx = t / "ctx2"
+    (hctx / "context" / "metrics").mkdir(parents=True)
+    (hctx / "context" / "metrics" / "inputs.tsv").write_text(
+        "hk1\t2026-01-02\tprojH\tmain\tharness\tattachment\t5\t0\n", encoding="utf8")
+    try:
+        PROJECTS = t / "projects2"
+        sys.argv = ["session-audit.py", str(hctx), "--all"]
+        hooks_tsv = hctx / "context" / "metrics" / "hooks.tsv"
+        for _ in (1, 2):  # the rerun must not duplicate
+            main()
+            hrows = sorted(l for l in hooks_tsv.read_text(encoding="utf8").splitlines()
+                           if l and not l.startswith("#")) if hooks_tsv.exists() else []
+            want = [f"hk1\t2026-01-02\tprojH\tmain\t{e}\t{h}\t{r}\t{x}\t{d}" for e, h, r, x, d in [
+                ("SessionStart", "a.sh", 2, 1, 80), ("Stop", "*", 0, 1, ""), ("Stop", "s1.sh", 1, 0, ""),
+                ("Stop", "s2.py", 1, 0, "")]]
+            if hrows != sorted(want):
+                bad(f"hooks.tsv wrong or duplicated: {hrows}")
+        irows = (hctx / "context" / "metrics" / "inputs.tsv").read_text(encoding="utf8")
+        if "\tattachment\t" in irows:
+            bad(f"the legacy harness/attachment row survived a rescan: {irows}")
+        for f in (hctx / "context" / "metrics").glob("*.tsv"):
+            if "SECRET" in f.read_text(encoding="utf8"):
+                bad(f"a command string, content or stderr leaked into {f.name}")
+        ok("hooks.tsv counts runs, errors and duration per hook; Stop once, from its summary; rerun is idempotent")
+    finally:
+        PROJECTS, sys.argv = orig_projects, orig_argv
+
     # 10. Records are not guaranteed to be in timestamp order — sidechain and
     #     subagent messages interleave. Measured 2026-09-29: active_s exceeded
     #     duration_s in 46 of 85 real rows, up to 1.7x, inflating tokens/active-hour.
@@ -1111,6 +1225,11 @@ def main():
     input_rows = {(f[0], f[4], f[5]): l for l in
                   (inputs_tsv.read_text(encoding="utf8").splitlines() if inputs_tsv.exists() else [])
                   if l and not l.startswith("#") for f in [l.split("\t")]}
+    hooks_tsv = outdir / "hooks.tsv"
+    # Keyed (session, event, hook); same rule.
+    hook_rows = {(f[0], f[4], f[5]): l for l in
+                 (hooks_tsv.read_text(encoding="utf8").splitlines() if hooks_tsv.exists() else [])
+                 if l and not l.startswith("#") for f in [l.split("\t")]}
     seen_cand = load_seen(cand, SEEN_CAND)
 
     cutoff = days * 86400
@@ -1136,6 +1255,12 @@ def main():
             if round(tok) or img:
                 input_rows[(m["session"], src, kind)] = "\t".join([
                     m["session"], m["date"], m["project"], m["agent"], src, kind, str(round(tok)), str(img)])
+        for k in [k for k in hook_rows if k[0] in (m["session"], path.stem)]:
+            del hook_rows[k]
+        for (ev, hk), (runs, errs, ms) in m["hooks"].items():
+            hook_rows[(m["session"], ev, hk)] = "\t".join([
+                m["session"], m["date"], m["project"], m["agent"], ev, hk, str(runs), str(errs),
+                "" if ev == "Stop" else str(ms)])  # a Stop summary carries no duration
         touched += 1
         unpriced |= m["unpriced"]
         for signal, fp, note in cands:
@@ -1171,8 +1296,16 @@ def main():
         "# Written by session-audit.py. source = activity whose tool result or own output was re-sent,\n"
         "# or session start / cache rebuild / prompt / harness. Visible parts are char/4 estimates\n"
         "# scaled to the bill; the remainder is harness/not in transcript. Carry (cache read) is in sessions.tsv.\n"
+        "# harness/attachment is the legacy lump of sessions scanned before attachments were named (pre-split history).\n"
         "# " + "\t".join(INPUT_COLUMNS) + "\n"
         + "".join(input_rows[k] + "\n" for k in sorted(input_rows)), encoding="utf8")
+    hooks_tsv.write_text(
+        "# Hook runs, errors and time by session — derived, never authored\n"
+        "# Written by session-audit.py. One row per (session, event, hook); hook = script basename or hookName,\n"
+        "# never the command, output or stderr. Silent hooks leave no transcript record and are absent.\n"
+        "# Stop: runs from stop_hook_summary only; hook * = the summary's hookErrors; duration empty.\n"
+        "# " + "\t".join(HOOK_COLUMNS) + "\n"
+        + "".join(hook_rows[k] + "\n" for k in sorted(hook_rows)), encoding="utf8")
 
     if new_cands:
         if not cand.exists():
