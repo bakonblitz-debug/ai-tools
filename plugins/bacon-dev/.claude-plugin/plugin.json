@@ -1,0 +1,9 @@
+{
+  "name": "bacon-dev",
+  "version": "1.0.0",
+  "description": "Personal Claude Code coding-mode toolkit — namespaced as bacon-dev:* . Bundles the architect planning pipeline (idea → proven plan → tasks), the ouroboros adversarial planning loop, the handoff out-of-scope-tangent capture skill, and git-conflict resolution. Enabled per project, not globally.",
+  "author": {
+    "name": "Isaac Bacon",
+    "email": "bakonblitzgithub@gmail.com"
+  }
+}

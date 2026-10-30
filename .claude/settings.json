@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "bacon-dev@ai-tools": true,
+    "ponytail@ponytail": true,
+    "superpowers@claude-plugins-official": true
+  }
+}

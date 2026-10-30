@@ -8,8 +8,10 @@ Thumbs.db
 *.swp
 *~
 
-# Local Claude session/state (keep it out of the public repo)
-.claude/
+# Local Claude session/state (keep it out of the public repo). settings.json is the one tracked
+# file: it names only public plugins and turns coding mode on for this repo (scripts/coding-mode.sh).
+.claude/*
+!.claude/settings.json
 
 # context/memory live in the private ai-tools-context repo, never here.
 # The old harness/context and harness/memory symlinks were removed 2026-10-27.

@@ -1,13 +1,7 @@
 ---
 name: git-conflict
 description: >
-  Resolve git conflicts that arise when multiple agents (or multiple isolated
-  worktrees/branches) make concurrent changes to the same project files. Use
-  when `git status` shows unmerged paths, a merge/rebase stops with conflict
-  markers, or a PR shows a conflicting-files warning. Trigger on: merge
-  conflict, rebase conflict, conflicting changes, resolve conflicts, worktrees
-  diverged, two agents touched the same file. Not for ordinary code review —
-  only for actual unmerged/conflicted git state.
+  Merge conflict, rebase conflict, conflicting changes, resolve conflicts, worktrees diverged, two agents touched the same file. Use when `git status` shows unmerged paths or a merge/rebase stops with markers. Not for ordinary review.
 ---
 
 # Git Conflict — Cross-Agent Conflict Resolution

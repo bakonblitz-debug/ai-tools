@@ -1,13 +1,7 @@
 ---
 name: second-brain
 description: >
-  Activate deep engineering mode. Orients in the codebase and memory before saying anything,
-  plans before acting, builds with TDD and verified steps, and records decisions to persistent
-  memory so nothing is lost between sessions. This is not chatbot mode — it is the mode for
-  real engineering work. Trigger on: "let's work on", "help me build", "something is broken",
-  "review this", "I need to understand how", "let's fix", "design this", or any request that
-  requires actually reading and changing code. Do NOT trigger on quick one-off questions or
-  lookups — those get a direct answer, not this pipeline.
+  "Let's work on", "help me build", "something is broken", "review this", "I need to understand how", "let's fix". Deep engineering mode: orient in code and memory, plan, build test-first, record decisions. Not for quick lookups.
 categories:
 - engineering
 tags:

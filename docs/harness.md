@@ -33,7 +33,7 @@ tiered-model pipeline.*
 
 This design spans two runtimes that must not be conflated:
 
-1. **Hermes' own skills** (`architect`, `ouroboros`, `git-conflict`, `tdd`,
+1. **Hermes' own skills** (`architect`, `ouroboros`, `git-conflict`,
    `handoff`, and the Hermes-bundled `claude-code` skill) — invoked by
    Hermes' native skill-loading mechanism, running on whichever local model
    is currently active.
@@ -265,8 +265,8 @@ Proposer/Challenger = `deepseek-r1:32b-65k`; ouroboros's Phase 5 verifier =
 own docs, subagents use the same model as the parent when no override is
 given — so each tier's model comes from an explicit `/model <name>` switch
 on the parent, done immediately before that specific `delegate_task` call,
-then switched back after. This is the same convention `architect`/`ouroboros`/
-`tdd` already use (switch once before the whole skill runs) — applied here at
+then switched back after. This is the same convention `architect`/`ouroboros`
+already use (switch once before the whole skill runs) — applied here at
 the granularity of "before this one delegate_task call" instead. Setting
 `delegation.model` globally would silently override every tier uniformly and
 break this.
@@ -346,7 +346,7 @@ call opt-in regardless of plan authorship.
 
 ---
 
-## `architect` — orchestrator (§5 rewrite, full content in `plugins/bacon/skills/architect/SKILL.md`)
+## `architect` — orchestrator (§5 rewrite, full content in `plugins/bacon-dev/skills/architect/SKILL.md`)
 
 Targeted rewrite, not a rebuild — same "conductor not coupler" philosophy.
 Summary of what changed (full content lives in the skill file itself):

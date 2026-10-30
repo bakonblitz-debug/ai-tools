@@ -178,9 +178,9 @@ td .fileb{margin:1px 3px 1px 0}
 </section>
 
 <section class="view" id="v-pipeline" hidden>
-  <p class="lede">How the skills chain for a code change. <code>bacon:architect</code> conducts; each skill also works alone. The gates are the point: nothing moves to the next phase until the current one holds.</p>
+  <p class="lede">How the skills chain for a code change. <code>bacon-dev:architect</code> conducts; each skill also works alone. The gates are the point: nothing moves to the next phase until the current one holds.</p>
   <div class="pipe" id="pipe"></div>
-  <p class="loopnote">Two loops sit inside this: ouroboros sends a flawed plan back to Plan until neither role finds a blocking flaw, and the build gate sends a failing lap back to TDD. Anything out of scope found along the way goes to <code>bacon:handoff</code> as a plan in <code>.plans/</code>, so the current diff stays small.</p>
+  <p class="loopnote">Two loops sit inside this: ouroboros sends a flawed plan back to Plan until neither role finds a blocking flaw, and the build gate sends a failing lap back to TDD. Anything out of scope found along the way goes to <code>bacon-dev:handoff</code> as a plan in <code>.plans/</code>, so the current diff stays small.</p>
 </section>
 
 <section class="view" id="v-data" hidden>
@@ -237,7 +237,7 @@ const N = [
    edit:"stop the greeting (delete the function). A terminal tab opened before the edit keeps the old behaviour until <code>source ~/.zshrc</code>.",
    run:"type claude"},
   {id:"claudemd", path:"<workspace>/CLAUDE.md", kind:"entry", sub:"rules loaded first, every session",
-   what:"The workspace rules: start-of-session steps, hard rules, how every reply should read, and that code changes go through bacon:architect.",
+   what:"The workspace rules: start-of-session steps, hard rules, how every reply should read, and that code changes go through bacon-dev:architect.",
    why:"Instructions near the start of context weigh most, so this file stays short and points elsewhere for detail.",
    edit:"change a rule every session must follow."},
   // hooks
@@ -296,26 +296,26 @@ const N = [
    edit:"change index or ledger format.", run:"bash scripts/context-index.sh --selftest"},
   // skills
   {id:"market", path:".claude-plugin/marketplace.json", kind:"skill", sub:"the ai-tools marketplace",
-   what:"Declares this repo as a marketplace named <code>ai-tools</code> holding one plugin, <code>bacon</code>.",
+   what:"Declares this repo as a marketplace named <code>ai-tools</code> holding two plugins, <code>bacon</code> and <code>bacon-dev</code>.",
    why:"The standard Claude Code layout, so the plugin installs with the normal commands.",
    edit:"add a second plugin."},
   {id:"plugin", path:"plugins/bacon/.claude-plugin/plugin.json", kind:"skill", sub:"plugin manifest",
    what:"The plugin's name, version and description. Every skill folder beside it is invoked as <code>bacon:&lt;folder&gt;</code>.",
    why:"Namespacing keeps these skills from colliding with same-named skills from other plugins.",
    edit:"bump the version."},
-  {id:"architect", path:"plugins/bacon/skills/architect/SKILL.md", kind:"skill", skill:"bacon:architect", sub:"the default path for code changes",
+  {id:"plugindev", path:"plugins/bacon-dev/.claude-plugin/plugin.json", kind:"skill", sub:"coding-mode plugin manifest",
+   what:"The coding-mode plugin's name, version and description. Every skill folder beside it is invoked as <code>bacon-dev:&lt;folder&gt;</code>.",
+   why:"Coding skills load only in folders that enable this plugin, so a root session pays nothing for them.",
+   edit:"bump the version."},
+  {id:"architect", path:"plugins/bacon-dev/skills/architect/SKILL.md", kind:"skill", skill:"bacon-dev:architect", sub:"the default path for code changes",
    what:"Ground → Plan → ouroboros → task specs → TDD build, with a gate between each. Also covers ticket tracking and which model handles each tier.",
    why:"A conductor, not a planner: it invents no logic of its own, it sequences skills that each work alone. Small fixes included, because \"it's just a small fix\" is where unreviewed assumptions ship.",
    edit:"change the pipeline's phases or gates."},
-  {id:"ouroboros", path:"plugins/bacon/skills/ouroboros/SKILL.md", kind:"skill", skill:"bacon:ouroboros", sub:"adversarial planning loop",
+  {id:"ouroboros", path:"plugins/bacon-dev/skills/ouroboros/SKILL.md", kind:"skill", skill:"bacon-dev:ouroboros", sub:"adversarial planning loop",
    what:"A planner and an attacker revise the plan until neither finds a blocking flaw (premortem attack, regenerate rather than append), then a separate verifier certifies it. Output is <code>PLAN.md</code> with status proven, provisional or deadlocked.",
    why:"A plan checked only by its author keeps the author's blind spots. Regenerating instead of appending stops the plan becoming a patch pile.",
    edit:"change how plans are attacked or the convergence rule."},
-  {id:"tdd", path:"plugins/bacon/skills/tdd/SKILL.md", kind:"skill", skill:"bacon:tdd", sub:"red → green → refactor",
-   what:"One failing test per lap, watched to fail for the right reason, then the simplest code to pass, then refactor. Bug fixes start with a test that reproduces the bug. Laravel/Pest section included.",
-   why:"A test written first describes what the code should do; one written after describes what it happens to do.",
-   edit:"change test-first rules or the Pest section."},
-  {id:"handoffsk", path:"plugins/bacon/skills/handoff/SKILL.md", kind:"skill", skill:"bacon:handoff", sub:"park out-of-scope finds",
+  {id:"handoffsk", path:"plugins/bacon-dev/skills/handoff/SKILL.md", kind:"skill", skill:"bacon-dev:handoff", sub:"park out-of-scope finds",
    what:"When something out of scope turns up mid-task, write a focused plan in <code>.plans/handoff-*.md</code> (context, issue, scope, approach, verification, status) and delegate it, instead of fixing it inline.",
    why:"Inline side fixes make diffs unreviewable; silently dropping them loses them. A plan file keeps both the diff and the find.",
    edit:"change the handoff plan template."},
@@ -323,7 +323,7 @@ const N = [
    what:"Activate → Ground → Plan → Build in verified steps → Verify → Record decisions to memory. Not for quick questions.",
    why:"Reading before speaking and recording after finishing is what keeps the next session from re-deriving everything.",
    edit:"change the engineering-mode phases."},
-  {id:"gitconflict", path:"plugins/bacon/skills/git-conflict/SKILL.md", kind:"skill", skill:"bacon:git-conflict", sub:"concurrent-agent conflicts",
+  {id:"gitconflict", path:"plugins/bacon-dev/skills/git-conflict/SKILL.md", kind:"skill", skill:"bacon-dev:git-conflict", sub:"concurrent-agent conflicts",
    what:"Understand both sides, reconcile intents, escalate instead of guessing, verify before committing. Has a section for context-repo conflicts, which are about ideas, not code.",
    why:"Two agents or two machines can edit the same file. Picking a side silently loses one of them.",
    edit:"change the conflict procedure."},
@@ -361,6 +361,18 @@ const N = [
    what:"Runs the index generator's selftest and the context checks. A red run writes a handoff file.",
    why:"Failure must show up where it is already read. The digest prints handoffs, so no mail and no new channel.",
    edit:"add a monthly check.", run:"launchd (see templates/context-check.plist.example)"},
+  {id:"codingmode", path:"scripts/coding-mode.sh", kind:"tool", sub:"opt a project into coding mode",
+   what:"<code>coding-mode.sh &lt;dir&gt;</code> merges bacon-dev, ponytail and superpowers into <code>&lt;dir&gt;/.claude/settings.json</code> without dropping other keys; <code>--check</code> exits 1 listing what is missing.",
+   why:"User settings keep the coding plugins off, so only folders that opt in pay for them. Health-check asserts every project repo has opted in.",
+   edit:"change the coding plugin set.", run:"coding-mode.sh ~/www/projects/x --check"},
+  {id:"codingrules", path:"plugins/bacon-dev/hooks/coding-rules.sh", kind:"skill", sub:"SessionStart hook: coding rules",
+   what:"Prints <code>context/memory/index/coding.md</code> at session start, only while bacon-dev is enabled; silent if the file is absent. Registered by <code>plugins/bacon-dev/hooks/hooks.json</code>.",
+   why:"Coding rules reach coding-mode sessions and no root session pays for them.",
+   edit:"change which file is printed."},
+  {id:"codinghooks", path:"plugins/bacon-dev/hooks/hooks.json", kind:"skill", sub:"hook registration",
+   what:"Registers coding-rules.sh on SessionStart (startup, clear, compact).", why:"A plugin's hooks run only while it is enabled.", edit:"change when it fires."},
+  {id:"aitsettings", path:".claude/settings.json", kind:"entry", sub:"this repo's coding-mode opt-in",
+   what:"enabledPlugins for bacon-dev, ponytail and superpowers; written by coding-mode.sh.", why:"The repo opts into coding mode itself.", edit:"rerun coding-mode.sh."},
   {id:"onmac", path:"scripts/on-mac.sh", kind:"tool", sub:"run a command on the Mac over ssh",
    what:"<code>on-mac.sh &lt;project&gt; &lt;cmd…&gt;</code> runs in that project's folder on the Mac, passing arguments as argv so quoting survives, and propagating the exit code.",
    why:"Git cannot write objects over the SMB share, so git (and Docker) for the shared tree run on the Mac.",
@@ -405,7 +417,7 @@ const N = [
   {id:"pr-intake", path:"docs/prompting/project-intake.md", kind:"doc", sub:"runbook: onboarding", what:"Prompts for getting oriented in an unfamiliar codebase.", why:"Map before you change.", edit:"—"},
   {id:"pr-bug", path:"docs/prompting/bug-fix.md", kind:"doc", sub:"runbook: bug fix", what:"Reproduce, test first, root cause, review.", why:"Bug fixes are where test-first pays most.", edit:"—"},
   {id:"pr-feat", path:"docs/prompting/new-feature.md", kind:"doc", sub:"runbook: new feature", what:"Scope, plan, build against the plan, review.", why:"Scope boundaries stop drift.", edit:"—"},
-  {id:"pr-tdd", path:"docs/prompting/tdd.md", kind:"doc", sub:"runbook: test-first", what:"The prompts for a red-green-refactor build.", why:"The runbook beside the tdd skill.", edit:"—"},
+  {id:"pr-tdd", path:"docs/prompting/tdd.md", kind:"doc", sub:"runbook: test-first", what:"The prompts for a red-green-refactor build.", why:"The runbook for the TDD rule in coding-standards.md.", edit:"—"},
   {id:"pr-refactor", path:"docs/prompting/scoped-refactor.md", kind:"doc", sub:"runbook: refactor", what:"Behaviour-preserving cleanup of one area.", why:"\"Implement\" and \"untangle\" are different tasks.", edit:"—"},
   {id:"pr-review", path:"docs/prompting/review-triggers.md", kind:"doc", sub:"runbook: review", what:"Running code and security review on demand; triage into must-fix, should-fix, note.", why:"Review is part of building.", edit:"—"},
   {id:"readme", path:"README.md", kind:"doc", sub:"principles + four phases", what:"Why the workflow looks the way it does, and Plan → Build → Review → Ship.", why:"The front door of the public repo.", edit:"change principles."},
@@ -446,20 +458,20 @@ const E = [
   ["health","libroot","sources"],["health","todo","runs"],["health","cindex","runs"],["health","clonetest","runs selftest"],
   ["health","tree","checks"],["health","active","checks"],["health","map-md","checks"],["health","map-html","checks"],
   ["clonetest","health","runs"],["monthly","libroot","sources"],["monthly","cindex","runs"],["monthly","health","runs"],["monthly","plans","writes on failure"],
-  ["plist","monthly","schedules"],["libroot","envex","loads (.env)"],["onmac","envex","reads (.env)"],
-  ["market","plugin","lists"],
-  ["plugin","architect","contains"],["plugin","ouroboros","contains"],["plugin","tdd","contains"],["plugin","handoffsk","contains"],
-  ["plugin","secondbrain","contains"],["plugin","gitconflict","contains"],["plugin","greet","contains"],["plugin","cqskill","contains"],["plugin","aitc","contains"],
-  ["architect","ouroboros","calls"],["architect","tdd","calls"],["architect","handoffsk","calls"],["architect","taskspec","uses"],["architect","spike","uses"],
+  ["plist","monthly","schedules"],["libroot","envex","loads (.env)"],["codingrules","libroot","uses"],["codinghooks","codingrules","runs"],["plugindev","codinghooks","contains"],["aitsettings","plugindev","enables"],["codingmode","aitsettings","writes"],["onmac","envex","reads (.env)"],
+  ["market","plugin","lists"],["market","plugindev","lists"],
+  ["plugindev","architect","contains"],["plugindev","ouroboros","contains"],["plugindev","handoffsk","contains"],
+  ["plugin","secondbrain","contains"],["plugindev","gitconflict","contains"],["plugin","greet","contains"],["plugin","cqskill","contains"],["plugin","aitc","contains"],
+  ["architect","ouroboros","calls"],["architect","handoffsk","calls"],["architect","taskspec","uses"],["architect","spike","uses"],
   ["architect","delegation","uses"],["architect","standards","works to"],["architect","onmac","uses"],
-  ["tdd","standards","works to"],["handoffsk","plans","writes"],["secondbrain","tree","reads"],["secondbrain","memory","writes"],
+  ["pr-tdd","standards","runbook for"],["handoffsk","plans","writes"],["secondbrain","tree","reads"],["secondbrain","memory","writes"],
   ["greet","bootstrap","reads digest of"],["greet","plans","reads"],["greet","active","reads"],
   ["cqskill","cqpy","runs"],["cqpy","tree","reads"],["aitc","tree","reads/writes"],["aitc","sync","runs"],["gitconflict","tree","resolves"],
   ["claudemd","architect","requires"],["claudemd","standards","points to"],
   ["readme","docsreadme","links"],["docsreadme","harnessmd","links"],["docsreadme","map-md","links"],["map-md","map-html","links"],
   ["standards","std-php","includes"],["standards","std-fe","includes"],["setup","zshrc","documents"],["ctxdoc","settings","documents"],
   ["pr-readme","pr-intake","lists"],["pr-readme","pr-bug","lists"],["pr-readme","pr-feat","lists"],["pr-readme","pr-tdd","lists"],
-  ["pr-readme","pr-refactor","lists"],["pr-readme","pr-review","lists"],["pr-tdd","tdd","runbook for"],["readme","pr-readme","links"],
+  ["pr-readme","pr-refactor","lists"],["pr-readme","pr-review","lists"],["readme","pr-readme","links"],
   ["harnessmd","delegation","describes"],["readme","cheat","links"],["readme","setup","links"],["readme","models","links"],["readme","glossary","links"],
 ];
 const INV = {"fires":"fired by","enables":"enabled by","opens with":"opened by","writes":"written by","copies to .env":"copied by","runs":"run by",
@@ -487,7 +499,7 @@ function renderLanes(){
   $("#lanes").innerHTML = LANES.map(l=>{
     const items = N.filter(n=>n.kind===l.kind);
     return `<div class="lane" data-lane="${l.kind}"><h3><i class="sw" style="--c:${cvar(l.kind)}"></i>${l.name}</h3><p>${l.desc}</p><div class="chips">${
-      items.map(n=>`<button class="chip" id="c-${n.id}" data-id="${n.id}" style="--c:${cvar(n.kind)}"><span>${esc(n.path.replace(/^plugins\/bacon\/skills\//,"skills/"))}<small>${esc(n.skill && n.kind==="skill" && n.skill.startsWith("bacon:") ? n.skill : n.sub)}</small></span></button>`).join("")
+      items.map(n=>`<button class="chip" id="c-${n.id}" data-id="${n.id}" style="--c:${cvar(n.kind)}"><span>${esc(n.path.replace(/^plugins\/bacon(-dev)?\/skills\//,"skills/"))}<small>${esc(n.skill && n.kind==="skill" && /^bacon(-dev)?:/.test(n.skill) ? n.skill : n.sub)}</small></span></button>`).join("")
     }</div></div>`;}).join("");
 }
 function relsOf(id){
@@ -577,7 +589,7 @@ const SESSION = [
     ["budget","Context past 150k tokens → tells the model to write handoff-auto-<folder>.md."],
     ["handoffsh","Prompt is \"handoff [topic]\" → prints that plan."]]},
   {when:"Model works", note:"skills load on match", steps:[
-    ["architect","Any code change routes here; it calls ouroboros, then tdd."],
+    ["architect","Any code change routes here; it calls ouroboros, then builds test-first per the TDD rule."],
     ["cqskill","\"Latest / since\" questions about the tree."],
     ["handoffsk","Out-of-scope find → a plan file instead of an inline fix."]]},
   {when:"PostToolUse", note:"after each Write or Edit", steps:[["sync","Changed file under context/ or memory/ → regenerate indexes, commit, push (async)."]]},
@@ -598,7 +610,7 @@ const PIPE = [
   {h:"Plan", p:"Write PLAN.md: approach, what already exists, open questions, risks.", f:["architect","standards"]},
   {h:"Prove", p:"ouroboros attacks the plan until no blocking flaw is left, then a separate verifier certifies it.", f:["ouroboros"]},
   {h:"Break down", p:"Turn the proven plan into task specs (or a spike for an open question).", f:["taskspec","spike","delegation"]},
-  {h:"Build", p:"One failing test per lap, simplest code to pass, refactor while green.", f:["tdd","pr-tdd","standards"]},
+  {h:"Build", p:"One failing test per lap, simplest code to pass, refactor while green.", f:["pr-tdd","standards"]},
   {h:"Gate", p:"Tests pass, diff read, standards met. A failing lap goes back to Build.", f:["health","pr-review"]},
   {h:"Record", p:"Durable outcomes go into the context tree as leaves; sync commits them.", f:["tree","sync"]},
 ];
@@ -632,7 +644,7 @@ const CHANGE = [
   ["When a skill triggers",["architect","greet","cqskill"],"The description: line at the top of that skill's SKILL.md decides it."],
   ["The planning pipeline's phases",["architect","ouroboros"],""],
   ["How plans are attacked",["ouroboros"],""],
-  ["Test-first rules",["tdd","pr-tdd"],""],
+  ["Test-first rules",["standards","pr-tdd"],""],
   ["A coding rule",["standards","std-php","std-fe"],""],
   ["Plan-mode priming",["mindfile","mindset"],"Edit the mindset file; the script only injects it."],
   ["Hook wiring on a new machine",["install","settings"],"GROUPS in install.py decides which hooks come together."],
@@ -660,7 +672,7 @@ const WHY = [
   ["Failures surface where they're already read","A monthly check that fails writes a handoff file, which the startup digest prints. A new channel nobody reads is a silent failure in practice.",["monthly","plans","todo","candidates"]],
   ["The measured party doesn't write the measurement","wrong.sh records complaints verbatim before the model sees them; session-audit.py counts from raw transcript evidence. A metric the model maintains is one it can improve by doing less bookkeeping.",["wrong","audit","transcript"]],
   ["Short context is cheaper and better","Every request pays for the whole conversation so far. Past 150k tokens the session hands off and restarts small, with the plan restored automatically.",["budget","handoffsh","plans"]],
-  ["A conductor that owns no logic","architect only sequences skills that each work alone, so any one can be used, changed or replaced without touching the others.",["architect","ouroboros","tdd","handoffsk"]],
+  ["A conductor that owns no logic","architect only sequences skills that each work alone, so any one can be used, changed or replaced without touching the others.",["architect","ouroboros","handoffsk"]],
   ["Short always-loaded rules, detail behind pointers","Instructions early in context weigh most and every token is paid on every request. CLAUDE.md and MEMORY.md stay short and point to files read only when needed.",["claudemd","memory","standards"]],
 ];
 function renderWhy(){

@@ -119,7 +119,7 @@ If the agent hits a question it can't answer, I have it note the question in the
 
 Implement against the plan from Phase 1. Claude writes the change, runs the existing tests, and writes new tests for new behavior. On Laravel projects, **Boost + the Laravel best-practices skill** keep the generated code aligned with framework conventions.
 
-For anything with real logic — and *always* for bug fixes — I build it **test-first**: write a failing test for the next behavior, watch it fail for the right reason, write the simplest code to pass, then refactor while green. A test written before the code tests what the code is *supposed* to do, which is most of where bugs come from. This is the playbook's main "fewer bugs by construction" lever — the [`tdd` skill](plugins/bacon/skills/tdd/SKILL.md) is the discipline, [`tdd.md`](docs/prompting/tdd.md) is the runbook. I skip the ceremony for trivial behavior-free code and throwaway spikes; I don't bureaucratize it.
+For anything with real logic — and *always* for bug fixes — I build it **test-first**: write a failing test for the next behavior, watch it fail for the right reason, write the simplest code to pass, then refactor while green. A test written before the code tests what the code is *supposed* to do, which is most of where bugs come from. This is the playbook's main "fewer bugs by construction" lever — the TDD rule in [coding-standards.md](docs/coding-standards.md#tdd-rule) is the discipline, [`tdd.md`](docs/prompting/tdd.md) is the runbook. I skip the ceremony for trivial behavior-free code and throwaway spikes; I don't bureaucratize it.
 
 Build is done when the change compiles, tests pass (each new one having been seen to fail then pass), and I've read the diff myself.
 
@@ -166,6 +166,7 @@ I add guides as I hit new scenarios. A guide earns its place *after* I've done t
 ai-tools/
 ├── README.md              # This file — principles + workflow
 ├── plugins/bacon/         # The Claude Code plugin: skills invoked as bacon:*
+├── plugins/bacon-dev/     # Coding-mode plugin: skills invoked as bacon-dev:*
 ├── scripts/               # Hooks and tools: install.py, health-check.sh, session-todo.sh, …
 ├── bin/                   # `now`
 ├── config/                # Delegation config

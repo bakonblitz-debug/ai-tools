@@ -1,6 +1,6 @@
 # Test-driven build — red, green, refactor
 
-For building behavior I want pinned down by a test *before* it exists — new logic, a feature with real branching, or a bug I want to never see again. The point is fewer bugs by construction: the test states the intended behavior, then the code earns its way to green. The full discipline lives in the [`tdd` skill](../../plugins/bacon/skills/tdd/SKILL.md); this is the copy-paste runbook.
+For building behavior I want pinned down by a test *before* it exists — new logic, a feature with real branching, or a bug I want to never see again. The point is fewer bugs by construction: the test states the intended behavior, then the code earns its way to green. The full discipline is the TDD rule in [coding-standards.md](../coding-standards.md#tdd-rule) (method: `superpowers:test-driven-development`); this is the copy-paste runbook.
 
 ## When to use / when not
 

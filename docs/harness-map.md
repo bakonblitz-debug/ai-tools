@@ -40,7 +40,7 @@ flowchart LR
   subgraph R["ai-tools (this repo, public)"]
     H["scripts/<br/>hook scripts"]
     T["scripts/ + bin/<br/>hand-run tools"]
-    P["plugins/bacon/skills/<br/>bacon:* skills"]
+    P["plugins/bacon/skills/<br/>bacon:* skills<br/>plugins/bacon-dev/skills/<br/>bacon-dev:* skills"]
     D["docs/<br/>standards · runbooks"]
   end
   subgraph X["context repo (private)"]
@@ -103,6 +103,7 @@ The status line at the bottom of the terminal is `scripts/priority-line.sh`, re-
 ai-tools/
 ├── .claude-plugin/marketplace.json   the marketplace Claude Code installs the plugin from
 ├── plugins/bacon/                    the plugin: skills invoked as bacon:*
+├── plugins/bacon-dev/                coding mode: skills invoked as bacon-dev:*
 │   ├── .claude-plugin/plugin.json
 │   └── skills/<name>/SKILL.md        one folder per skill
 ├── scripts/                          hook scripts, helpers and hand-run tools
@@ -118,21 +119,24 @@ ai-tools/
 
 ## Every file
 
-### Plugin and skills (`plugins/bacon/`)
+### Plugin and skills (`plugins/bacon/`, `plugins/bacon-dev/`)
 
 A skill is a Markdown file the model reads when a request matches its description. Its
 `description:` frontmatter decides when it triggers, so that line matters most when you edit one.
 
 | File | Skill name | What it does | Edit it to… |
 |---|---|---|---|
-| `.claude-plugin/marketplace.json` | — | Declares this repo as the `ai-tools` marketplace holding one plugin, `bacon`. | rename or add a plugin |
+| `.claude-plugin/marketplace.json` | — | Declares this repo as the `ai-tools` marketplace holding two plugins, `bacon` and `bacon-dev`. | rename or add a plugin |
 | `plugins/bacon/.claude-plugin/plugin.json` | — | The plugin's name, version and description. | bump the version |
-| `plugins/bacon/skills/architect/SKILL.md` | `bacon:architect` | The default path for any code change: ground → plan → ouroboros → task specs → TDD build, with a gate between each. Sequences the other skills; invents no planning logic of its own. | change the pipeline's phases or gates |
-| `plugins/bacon/skills/ouroboros/SKILL.md` | `bacon:ouroboros` | Two-role adversarial planning loop: a planner and an attacker revise the plan until neither finds a blocking flaw, then a separate verifier certifies it. Writes `PLAN.md`. | change how plans are challenged or the convergence rule |
-| `plugins/bacon/skills/tdd/SKILL.md` | `bacon:tdd` | Red → green → refactor, one failing test per lap; includes a Laravel/Pest section. | change test-first rules |
-| `plugins/bacon/skills/handoff/SKILL.md` | `bacon:handoff` | When an out-of-scope problem turns up mid-task, write a plan for it in `.plans/` and hand it off instead of fixing it inline. | change the handoff plan template |
+| `plugins/bacon-dev/.claude-plugin/plugin.json` | — | The coding-mode plugin's name, version and description. | bump the version |
+| `plugins/bacon-dev/hooks/hooks.json` | — | Registers the SessionStart hook that runs `coding-rules.sh` while bacon-dev is enabled. | change when the hook fires |
+| `plugins/bacon-dev/hooks/coding-rules.sh` | — | Prints `<workspace>/context/memory/index/coding.md` so coding rules load only in coding-mode sessions; silent if the file is absent. Has a `--selftest`. | change which file the hook prints |
+| `.claude/settings.json` | — | This repo's own coding-mode opt-in (the only tracked file under `.claude/`). | rerun `scripts/coding-mode.sh .` |
+| `plugins/bacon-dev/skills/architect/SKILL.md` | `bacon-dev:architect` | The default path for any code change: ground → plan → ouroboros → task specs → TDD build, with a gate between each. Sequences the other skills; invents no planning logic of its own. | change the pipeline's phases or gates |
+| `plugins/bacon-dev/skills/ouroboros/SKILL.md` | `bacon-dev:ouroboros` | Two-role adversarial planning loop: a planner and an attacker revise the plan until neither finds a blocking flaw, then a separate verifier certifies it. Writes `PLAN.md`. | change how plans are challenged or the convergence rule |
+| `plugins/bacon-dev/skills/handoff/SKILL.md` | `bacon-dev:handoff` | When an out-of-scope problem turns up mid-task, write a plan for it in `.plans/` and hand it off instead of fixing it inline. | change the handoff plan template |
 | `plugins/bacon/skills/second-brain/SKILL.md` | `bacon:second-brain` | Deep engineering mode: orient in code and memory, plan, build with verified steps, record decisions. | change the engineering-mode phases |
-| `plugins/bacon/skills/git-conflict/SKILL.md` | `bacon:git-conflict` | Resolving conflicts from concurrent agents or worktrees, including conflicts in the context repo (reconcile ideas, never pick a side silently). | change conflict procedure |
+| `plugins/bacon-dev/skills/git-conflict/SKILL.md` | `bacon-dev:git-conflict` | Resolving conflicts from concurrent agents or worktrees, including conflicts in the context repo (reconcile ideas, never pick a side silently). | change conflict procedure |
 | `plugins/bacon/skills/greet/SKILL.md` | `bacon:greet` | Session opener: reads the startup digest and offers at most four picker options in a fixed order. | change what the opening picker offers |
 | `plugins/bacon/skills/context-query/SKILL.md` | `bacon:context-query` | "Latest / since <date>" questions about the context tree: the date is in the file name, so it is a sort, never a text search. | change when date queries trigger |
 | `plugins/bacon/skills/context-query/context-query.py` | (used by `bacon:context-query`) | `latest N`, `since <date>`, `find <name>` over leaf file names; has `--self-check`. | change date parsing |
@@ -167,6 +171,7 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | `scripts/clone-test.sh` | Clones the repo fresh and records what a stranger would hit. The installability gate. | `bash scripts/clone-test.sh` |
 | `scripts/install.py` | Wires hooks into someone else's `settings.json`: three opt-in groups, backup first, merge never overwrite. | `python3 scripts/install.py --dry-run` |
 | `scripts/context-check-monthly.sh` | Monthly proof that the generated indexes still work; a red run writes a handoff file. | launchd, from `templates/context-check.plist.example` |
+| `scripts/coding-mode.sh` | Turns coding mode on for a project folder: merges bacon-dev, ponytail and superpowers into its `.claude/settings.json` (other keys kept). `--check` lists what is missing. | `coding-mode.sh <dir> [--check]` |
 | `scripts/on-mac.sh` | Runs a command in a project folder on the Mac over ssh, keeping quoting and exit codes. | `on-mac.sh <project> <cmd…>` |
 | `scripts/squash-history.sh` | Rewrites a branch into fewer commits by reusing each group's final tree, so content cannot change. | `squash-history.sh <repo> <groups-dir>` |
 | `bin/now` | Today's date in every format used here, and how many days ago a date was. | `now`, `now 2026-08-11` |
@@ -225,28 +230,28 @@ These are part of the harness but live elsewhere. The context repo files are pri
 | `<context>/context/metrics/sessions.tsv` | One row of counts per session | `session-audit.py` | the analytics work |
 | `<context>/context/metrics/candidates.md` | Signals waiting for a human verdict | `session-audit.py` | `session-todo.sh` digest |
 | `<context>/context/metrics/failures-<year>.md` | Failure log | `wrong.sh`, the model | reviews |
-| `<workspace>/.plans/handoff-*.md` | Open work plans, `## Status: open` | `bacon:handoff`, the model | `session-todo.sh`, `handoff.sh` |
+| `<workspace>/.plans/handoff-*.md` | Open work plans, `## Status: open` | `bacon-dev:handoff`, the model | `session-todo.sh`, `handoff.sh` |
 | `<workspace>/ACTIVE.md` | Full open-items list | `session-todo.sh` | you, `bacon:greet` |
 
 ---
 
 ## The planning pipeline
 
-How the skills chain for a code change. `bacon:architect` is the conductor; each skill also
+How the skills chain for a code change. `bacon-dev:architect` is the conductor; each skill also
 works alone.
 
 ```mermaid
 flowchart TD
   A["request"] --> G["Ground<br/>read code + context tree"]
   G --> P["Plan<br/>PLAN.md"]
-  P --> O{"bacon:ouroboros<br/>attack until no blocking flaw"}
+  P --> O{"bacon-dev:ouroboros<br/>attack until no blocking flaw"}
   O -- "flaws" --> P
   O -- "proven" --> TD["Task specs<br/>templates/task-spec-template.md"]
-  TD --> T["bacon:tdd<br/>one failing test per lap"]
+  TD --> T["TDD rule (coding-standards.md)<br/>one failing test per lap"]
   T --> GATE{"gate: tests,<br/>diff read, standards"}
   GATE -- "fails" --> T
   GATE -- "passes" --> REC["Record outcome<br/>in the context tree"]
-  T -. "out-of-scope find" .-> HO["bacon:handoff<br/>.plans/handoff-*.md"]
+  T -. "out-of-scope find" .-> HO["bacon-dev:handoff<br/>.plans/handoff-*.md"]
 ```
 
 ---

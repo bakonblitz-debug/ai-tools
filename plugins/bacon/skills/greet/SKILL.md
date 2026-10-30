@@ -1,9 +1,7 @@
 ---
 name: greet
 description: >
-  Session opener. Greets the user and offers what is open today as picker options, top items first.
-  Run it as the first prompt of a session (`claude "/bacon:greet"`, or the `claude` wrapper in
-  docs/setup.md). Trigger on: greet me, what's open, what should we work on, start of session.
+  Greet me, what's open, what should we work on, start of session. Session opener: offers what is open today as picker options, top items first. Run as the first prompt (`claude "/bacon:greet"`).
 ---
 
 # Greet

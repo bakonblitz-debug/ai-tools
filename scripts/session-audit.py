@@ -662,7 +662,7 @@ def selftest():
         + req("2026-01-01T10:00:03", "d", 30)
         + req("2026-01-01T10:00:04", "e", 20, ("Write", {"file_path": "/w/.plans/x/PLAN.md"}))
         + req("2026-01-01T10:00:05", "f", 10, ("mcp__claude-in-chrome__computer", {}))
-        + req("2026-01-01T10:00:06", "g", 12, ("Agent", {"prompt": "p"}), ("Skill", {"skill": "bacon:ouroboros"})))
+        + req("2026-01-01T10:00:06", "g", 12, ("Agent", {"prompt": "p"}), ("Skill", {"skill": "bacon-dev:ouroboros"})))
     m, _ = scan(p)
     want = {"coding": (1, 100, 40), "reading": (1.5, 100, 0), "verifying": (0.5, 40, 0),
             "answering": (1, 30, 0), "planning": (1.5, 26, 0), "browser": (1, 10, 0),

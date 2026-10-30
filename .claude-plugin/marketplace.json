@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "ai-tools",
   "version": "1.0.0",
-  "description": "Personal Claude Code marketplace for the ai-tools harness. Hosts the `bacon` plugin, whose skills live in plugins/bacon/skills and are invoked namespaced as bacon:*.",
+  "description": "Personal Claude Code marketplace for the ai-tools harness. Hosts the `bacon` plugin (skills invoked as bacon:*) and the `bacon-dev` coding-mode plugin (bacon-dev:*).",
   "owner": {
     "name": "Isaac Bacon",
     "email": "bakonblitzgithub@gmail.com"
@@ -10,12 +10,21 @@
   "plugins": [
     {
       "name": "bacon",
-      "description": "Personal toolkit: architect (idea→proven-plan→tasks planning pipeline), ouroboros (adversarial planning loop), second-brain (deep engineering mode), handoff (out-of-scope tangent capture + delegation), tdd (test-first discipline), and git-conflict (multi-agent/worktree conflict resolution). Invoked namespaced as bacon:*.",
+      "description": "Personal toolkit: second-brain (deep engineering mode), greet, context-query, ai-tools-context. Invoked namespaced as bacon:*.",
       "author": {
         "name": "Isaac Bacon"
       },
       "category": "workflow",
       "source": "./plugins/bacon"
+    },
+    {
+      "name": "bacon-dev",
+      "description": "Coding-mode toolkit: architect (idea→proven-plan→tasks planning pipeline), ouroboros (adversarial planning loop), handoff (out-of-scope tangent capture + delegation), and git-conflict (multi-agent/worktree conflict resolution). Invoked namespaced as bacon-dev:*.",
+      "author": {
+        "name": "Isaac Bacon"
+      },
+      "category": "workflow",
+      "source": "./plugins/bacon-dev"
     }
   ]
 }

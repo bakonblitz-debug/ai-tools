@@ -1,15 +1,7 @@
 ---
 name: context-query
 description: >
-  Latest / newest / most recent context files, or anything since a date.
-  The index truncates this line around 60 characters, so everything above
-  this point is what actually reaches the model — keep the triggers first.
-  Leaf files are named <slug>-<epoch>-<YYYYMMDD>.md, so the date lives in the
-  FILENAME: these questions are a sort over names, never a search through file
-  contents. Trigger on: latest, most recent, last N, newest, since <date>,
-  what's new, recent notes. Do NOT grep file bodies for a date string — the
-  dates are not written in the prose, and every format you guess returns
-  nothing.
+  Latest, newest, most recent, last N, since <date>, what's new, recent notes: context files by date. Dates live in the FILENAME (<slug>-<epoch>-<YYYYMMDD>.md); sort names, never grep file bodies for a date.
 ---
 
 # Querying the context tree by date

@@ -13,7 +13,7 @@ usefulness to someone who is not him:
 |---|---|
 | The rules every language obeys | `coding-standards.md`, plus the drop-in for your stack in `coding-standards.d/` |
 | Copy-paste runbooks per situation | `prompting/` — bug fix, new feature, TDD, scoped refactor |
-| The skills | `skills/` — `architect` sequences the others; `ouroboros`, `tdd`, `handoff` each stand alone |
+| The skills | `skills/` — `architect` sequences the others; `ouroboros`, `handoff` each stand alone; TDD is a rule in `coding-standards.md` |
 | To wire it into Claude Code | `python3 scripts/install.py` (`--dry-run` first). It merges into your `settings.json`, backs it up, and prints the undo |
 | To check what works on your machine | `bash scripts/health-check.sh` — anything you do not have reports SKIP, not FAIL |
 
@@ -68,11 +68,13 @@ Standard Claude Code marketplace shape: the plugin under `plugins/`, everything 
 
 ```
 <workspace>/ai-tools/
-├── .claude-plugin/marketplace.json   — the `ai-tools` marketplace; lists one plugin
+├── .claude-plugin/marketplace.json   — the `ai-tools` marketplace; lists two plugins
 ├── plugins/bacon/                    — the plugin (skills are invoked as bacon:*)
 │   ├── .claude-plugin/plugin.json
-│   └── skills/                       — architect, ouroboros, tdd, handoff, git-conflict,
-│                                       second-brain, context-query, ai-tools-context
+│   └── skills/                       — second-brain, context-query, ai-tools-context, greet
+├── plugins/bacon-dev/                — coding mode (skills are invoked as bacon-dev:*)
+│   ├── .claude-plugin/plugin.json
+│   └── skills/                       — architect, ouroboros, handoff, git-conflict
 ├── scripts/                          — hooks and tools: claude-bootstrap.sh, session-todo.sh,
 │                                       health-check.sh, install.py, sync-memory.sh, …
 ├── bin/now                           — on PATH via ~/.zshenv

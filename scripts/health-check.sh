@@ -97,7 +97,7 @@ check_no_personal_identifiers() {
   REPO=$(cd "$SCRIPTS/.." && pwd)
   command -v git >/dev/null 2>&1 || { echo "git not available"; return 77; }
   git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repo"; return 77; }
-  allow='^(LICENSE|\.claude-plugin/marketplace\.json|plugins/bacon/\.claude-plugin/plugin\.json|\.env\.example)$'
+  allow='^(LICENSE|\.claude-plugin/marketplace\.json|plugins/bacon/\.claude-plugin/plugin\.json|plugins/bacon-dev/\.claude-plugin/plugin\.json|\.env\.example)$'
   hits=$(git -C "$REPO" ls-files \
     | grep -vE "$allow" \
     | while read -r f; do
@@ -134,14 +134,15 @@ check_harness_map_covers_files() {
 # (context-check-monthly.sh mentions it and is a real job that writes files).
 check_script_selftests() {
   n=0; bad=""; skip=""
-  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py 2>/dev/null | LC_ALL=C sort); do
+  # Plugin hook scripts (plugins/*/hooks/*.sh) count too: they run in every session of a project.
+  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py "$SCRIPTS"/../plugins/*/hooks/*.sh 2>/dev/null | LC_ALL=C sort); do
     n=$((n + 1))
     case $f in *.py) run=python3 ;; *) run=bash ;; esac
     command -v "$run" >/dev/null 2>&1 || { skip="$skip ${f##*/}"; continue; }
     # By bare name from its own folder, the way he runs one by hand: a script that
     # re-runs itself through a raw $0 fails here (3 did, 2026-10-28).
     # perl alarm because macOS has no timeout(1); SIGALRM exits 142.
-    (cd "$SCRIPTS" && perl -e 'alarm shift; exec @ARGV or exit 127' "${SELFTEST_LIMIT:-60}" "$run" "${f##*/}" --selftest </dev/null >/dev/null 2>&1)
+    (cd "${f%/*}" && perl -e 'alarm shift; exec @ARGV or exit 127' "${SELFTEST_LIMIT:-60}" "$run" "${f##*/}" --selftest </dev/null >/dev/null 2>&1)
     case $? in 0) ;; 142) bad="$bad ${f##*/} (timed out)" ;; *) bad="$bad ${f##*/}" ;; esac
   done
   [ "$n" -gt 0 ] || { echo "found no script with a --selftest"; return 1; }
@@ -336,6 +337,69 @@ print("%d declaration(s) in %s agree with settings" % (len(pairs), md))
 ' "$WWW/CLAUDE.md" "$HOME/.claude/settings.json" "$WWW/.claude/settings.json" "$WWW/.claude/settings.local.json"
 }
 
+# ---- Coding mode (2026-10-30, .plans/coding-mode/PLAN.md) --------------------------------
+# User settings keep the coding plugins off; a folder opts in through its own
+# .claude/settings.json (scripts/coding-mode.sh writes it). Three invariants:
+#   (a) every git checkout directly under <workspace>/projects/, plus ai-tools, has opted in;
+#   (b) every plugin a project file enables is installed on THIS machine;
+#   (c) every memory/*.md is reachable from MEMORY.md directly or through one index/*.md.
+# (a) scope, chosen 2026-10-30: a top-level folder counts when it has a .git (directory OR file, so
+# a sibling worktree such as epicerie-brands-wt counts: it is opened with its own claude session).
+find_py() {  # sets PYBIN to the first interpreter that actually runs (the PC python3 is a Store stub)
+  PYBIN=""
+  for c in python3 python py; do
+    have "$c" && "$c" -c 'import json' >/dev/null 2>&1 && { PYBIN=$c; return 0; }
+  done
+  return 1
+}
+coding_repos() {  # echoes the folders (a) and (b) look at
+  local d
+  for d in "$WWW"/projects/*/; do [ -e "${d}.git" ] && echo "${d%/}"; done
+  [ -d "$WWW/ai-tools" ] && echo "$WWW/ai-tools"
+}
+check_coding_mode_projects() {
+  [ -d "$WWW/projects" ] || [ -d "$WWW/ai-tools" ] || { echo "no workspace at $WWW"; return 77; }
+  local d bad="" n=0 out
+  for d in $(coding_repos); do
+    n=$((n+1))
+    out=$(bash "$SCRIPTS/coding-mode.sh" "$d" --check) || bad="$bad ${d#$WWW/}"
+  done
+  [ "$n" -gt 0 ] || { echo "no git repo under $WWW/projects and no ai-tools"; return 77; }
+  [ -z "$bad" ] || { echo "coding mode off in:$(echo "$bad" | cut -c1-200) (fix: scripts/coding-mode.sh <dir>)"; return 1; }
+  echo "$n repo(s) have the coding set enabled"
+}
+check_project_plugins_installed() {
+  local inst="$HOME/.claude/plugins/installed_plugins.json" d bad="" n=0
+  [ -f "$inst" ] || { echo "no $inst on this machine"; return 77; }
+  find_py || { echo "no working python3/python/py"; return 77; }
+  for d in $(coding_repos); do
+    [ -f "$d/.claude/settings.json" ] || continue
+    n=$((n+1))
+    out=$("$PYBIN" -c '
+import json, sys
+inst, proj = sys.argv[1:]
+have = json.load(open(inst, encoding="utf-8")).get("plugins", {})
+en = json.load(open(proj, encoding="utf-8")).get("enabledPlugins", {})
+print(" ".join(k for k, v in en.items() if v is True and k not in have))
+' "$inst" "$d/.claude/settings.json" 2>&1) || out="unreadable settings ($out)"
+    [ -z "$out" ] || bad="$bad ${d#$WWW/}:$out;"
+  done
+  [ -z "$bad" ] || { echo "enabled but not installed here:$(echo "$bad" | cut -c1-200)"; return 1; }
+  echo "$n project settings file(s): every enabled plugin is installed"
+}
+check_memory_reachable() {
+  local m="$WWW/context/memory" f name text bad=""
+  [ -f "$m/MEMORY.md" ] || { echo "no $m/MEMORY.md"; return 77; }
+  text=$(cat "$m/MEMORY.md" "$m"/index/*.md 2>/dev/null)
+  for f in "$m"/*.md "$m"/index/*.md; do
+    [ -f "$f" ] || continue
+    name=${f##*/}; [ "$f" = "$m/MEMORY.md" ] && continue
+    printf '%s' "$text" | grep -qE "[(/]$(printf '%s' "$name" | sed 's/\./\./g'))" || bad="$bad ${f#$m/}"
+  done
+  [ -z "$bad" ] || { echo "not reachable from MEMORY.md (directly or through one index):$(echo "$bad" | cut -c1-200)"; return 1; }
+  echo "every memory file is reachable from MEMORY.md"
+}
+
 # ==================================================================================
 # Selftest — proves the context checks FAIL on a broken tree.
 #
@@ -414,6 +478,7 @@ b
   fi
 
   # --- 5. script selftests: a mention is not a selftest, and none found must FAIL ---
+  REPO_SCRIPTS=$SCRIPTS
   SCRIPTS=$t/scripts; mkdir -p "$SCRIPTS"
   printf '# runs context-index.sh --selftest; echo real job\n' > "$SCRIPTS/mentions.sh"
   ctx_expect 1 check_script_selftests
@@ -423,6 +488,11 @@ b
   printf 'case $1 in --selftest) exit 0 ;; esac\n' > "$SCRIPTS/green.sh"
   printf 'import sys\nsys.exit(0 if "--selftest" in sys.argv else 2)\n' > "$SCRIPTS/green.py"
   ctx_expect 0 check_script_selftests
+  # plugin hook scripts are found too (bacon-dev's coding-rules.sh lives outside scripts/)
+  mkdir -p "$t/plugins/p/hooks"; printf 'case $1 in --selftest) exit 1 ;; esac
+' > "$t/plugins/p/hooks/red.sh"
+  ctx_expect 1 check_script_selftests
+  rm "$t/plugins/p/hooks/red.sh"
   printf 'case $1 in --selftest) sleep 30 ;; esac\n' > "$SCRIPTS/hang.sh"
   out=$(SELFTEST_LIMIT=1 check_script_selftests)
   case $out in *"hang.sh (timed out)"*) ;; *) echo "  FAIL: a hung selftest gave: $out"; ST_FAIL=1 ;; esac
@@ -454,6 +524,53 @@ b
   p6 0                                   # all agree
   rm -f "$t/h/.claude/settings.json"
   p6 77                                  # no settings file in any layer
+
+  # --- 7. coding mode: projects opted in, enabled plugins installed, memory reachable ---
+  SCRIPTS=$REPO_SCRIPTS      # section 5 pointed SCRIPTS at a fixture; coding-mode.sh is real
+  rm -rf "$t/w" "$t/h"; mkdir -p "$t/w/ai-tools" "$t/h/.claude/plugins"
+  p7() { ( HOME=$t/h; WWW=$t/w; ctx_expect "$1" "$2"; [ "$ST_FAIL" = 0 ] ) || ST_FAIL=1; }
+  rm -rf "$t/w/ai-tools"
+  p7 77 check_coding_mode_projects                       # no ai-tools, no projects/: skip
+  mkdir -p "$t/w/ai-tools" "$t/w/projects/a/.git" "$t/w/projects/plain" "$t/w/projects/w"
+  printf 'gitdir: x
+' > "$t/w/projects/w/.git"
+  p7 1 check_coding_mode_projects                        # repos without the set
+  out=$(WWW=$t/w check_coding_mode_projects)
+  case $out in *projects/a*projects/w*ai-tools*) ;; *) echo "  FAIL: (a) detail misses repos: $out"; ST_FAIL=1 ;; esac
+  case $out in *plain*) echo "  FAIL: (a) a folder without .git was checked: $out"; ST_FAIL=1 ;; esac
+  for d in ai-tools projects/a projects/w; do bash "$SCRIPTS/coding-mode.sh" "$t/w/$d" >/dev/null; done
+  p7 0 check_coding_mode_projects                        # all opted in; the plain folder is not a repo
+  echo '{"plugins":{"x@m":[]}}' > "$t/h/.claude/plugins/installed_plugins.json"
+  mkdir -p "$t/w/projects/a/.claude"
+  echo '{"enabledPlugins":{"x@m":true,"gone@m":false}}' > "$t/w/projects/a/.claude/settings.json"
+  rm -rf "$t/w/ai-tools/.claude" "$t/w/projects/w/.claude"
+  p7 0 check_project_plugins_installed                   # installed, and a false one is ignored
+  echo '{"enabledPlugins":{"x@m":true,"gone@m":true}}' > "$t/w/projects/a/.claude/settings.json"
+  p7 1 check_project_plugins_installed
+  out=$(HOME=$t/h WWW=$t/w check_project_plugins_installed)
+  case $out in *projects/a*gone@m*) ;; *) echo "  FAIL: (b) detail lacks project and plugin: $out"; ST_FAIL=1 ;; esac
+  rm "$t/h/.claude/plugins/installed_plugins.json"
+  p7 77 check_project_plugins_installed                  # no installed_plugins.json on this machine
+  mm=$t/w/context/memory; mkdir -p "$mm/index" "$mm/facts"
+  p7 77 check_memory_reachable                           # no MEMORY.md yet
+  printf -- '- [career](index/career.md) - topic
+- [a](a.md) - rule
+' > "$mm/MEMORY.md"
+  printf -- '- [b](../b.md) - rule
+' > "$mm/index/career.md"
+  printf 'x
+' > "$mm/a.md"; printf 'x
+' > "$mm/b.md"; printf 'x
+' > "$mm/facts/sheet.md"
+  p7 0 check_memory_reachable                            # via MEMORY.md and via one index; facts/ is not checked
+  printf 'x
+' > "$mm/orphan.md"
+  p7 1 check_memory_reachable
+  out=$(WWW=$t/w check_memory_reachable)
+  case $out in *orphan.md*) ;; *) echo "  FAIL: (c) detail does not name the orphan: $out"; ST_FAIL=1 ;; esac
+  rm "$mm/orphan.md"; printf -- '- [a](a.md) - rule
+' > "$mm/MEMORY.md"
+  p7 1 check_memory_reachable                            # an index nobody points at hides b.md
 
   [ "$ST_FAIL" = 0 ] && { echo "context selftest OK — every check fails on a broken tree and passes on a clean one"; return 0; }
   echo "context selftest FAILED"; return 1

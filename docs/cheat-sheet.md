@@ -20,7 +20,7 @@ Plan  →  Build  →  Review  →  Ship
 | Task is non-trivial or I'm guessing | Plan Mode first |
 | Plan carries real risk / hidden assumptions / a wrong call is expensive | Stress-test it with the `ouroboros` adversarial planning loop |
 | Task is one line and I know exactly what | Just do it — skip the ceremony |
-| Building real logic or fixing a bug | Test-first: red → green → refactor (`tdd` skill) |
+| Building real logic or fixing a bug | Test-first: red → green → refactor (TDD rule in `coding-standards.md`) |
 | Fixing a bug | Reproduce it as a *failing test first*, then fix to green |
 | Code looks plausible but off | "Where is this defined? Show me the source." |
 | Done writing | "Review the most recent uncommitted work for bugs and security." |

@@ -1,6 +1,7 @@
 ---
 name: ai-tools-context
-description: Load or update the shared context tree paired with the ai-tools repo (<workspace>/ai-tools). Use when he says "load my ai-tools context", "check the context tree", or "update ai-tools context about what we worked on". For Claude Code installs (e.g. claude-simply) that keep their own session bootstrapping and only touch this context when told to.
+description: >
+  "Load my ai-tools context", "check the context tree", "update ai-tools context about what we worked on". Loads or updates the shared context tree paired with <workspace>/ai-tools, for installs that keep their own bootstrapping.
 ---
 
 # ai-tools context — on-demand load/update

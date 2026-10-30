@@ -1,16 +1,7 @@
 ---
 name: handoff
 description: >
-  Use this skill whenever, in the middle of analyzing or working on a task, you
-  notice something out of scope that deserves its own work — a latent bug, a
-  missing test or edge case, a refactor opportunity, a small adjacent feature, a
-  questionable pattern, a TODO worth doing. Instead of fixing it inline (scope
-  creep, an unreviewable diff) or silently dropping it, hand it off: write a
-  focused plan-of-work .md and delegate it to a subagent. Trigger this even when
-  the user did NOT ask for the side fix — the whole point is to catch the tangent
-  yourself and keep the current task sharp. Reach for it on cues like "while I was
-  in here I noticed…", "this is unrelated but…", "that's broken too", "we should
-  also…", or any moment you feel the pull to fork off the main task.
+  "While I was in here I noticed…", "unrelated but…", "that's broken too", "we should also…": out-of-scope bug, missing test, refactor or TODO found mid-task. Write a focused plan in .plans/ and delegate it instead of fixing inline.
 ---
 
 # Handoff

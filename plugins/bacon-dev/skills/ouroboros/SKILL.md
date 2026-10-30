@@ -1,18 +1,7 @@
 ---
 name: ouroboros
 description: >
-  Produce a rigorously stress-tested implementation or architecture plan through an adversarial
-  two-agent loop that refines a plan until both agents agree it's complete, then certifies it with
-  an independent cross-model verifier. Use this whenever the user asks to "plan", "design",
-  "architect", or "think through" any non-trivial change before writing code — and especially when
-  they say ouroboros, want a "proven plan", want a plan challenged/stress-tested, or are about to
-  start work where a wrong assumption would be expensive. Trigger on: plan, design, architect,
-  stress-test, prove this plan, challenge my approach, premortem, what could go wrong, de-risk.
-  Runs standalone, and automatically upgrades when the Superpowers brainstorming skill (or an
-  existing design doc) is present by ingesting its requirements instead of re-eliciting them.
-  Prefer this over answering a planning request directly whenever the task has real risk, hidden
-  assumptions, or more than one reasonable approach. Distinct from brainstorming (which elicits
-  intent from the user) — ouroboros owns the gate that grounds, attacks, and certifies the plan.
+  Plan, design, architect, stress-test, prove this plan, challenge my approach, premortem, what could go wrong, de-risk. Adversarial planner/attacker loop, then an independent verifier; ingests a brainstorming design instead of re-asking. Use before risky or costly changes.
 ---
 
 # Ouroboros — Adversarial Planning Loop

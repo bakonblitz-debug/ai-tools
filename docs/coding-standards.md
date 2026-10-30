@@ -39,7 +39,7 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 
 ## Development
 
-- TDD: Red → Green → Refactor. No exceptions. The failing test comes first and it fails for the right reason before any implementation gets written. **One failing test per lap** — a batch of assertions handed over at once is test-first, not TDD, and it measurably costs more: same worker, same day, 4 attempts for an 18-assertion batch vs 0 retries across 4 single-test laps.
+- TDD is automatic — see [the TDD rule](#tdd-rule) below. One failing test per lap, never a batch.
 - Non-trivial work is planned before it is written: `architect` (idea → proven plan → tasks), then `ouroboros` at least once to challenge the plan adversarially, then TDD. Skipping straight to code is the exception and needs a reason.
 - A green typecheck is not a correctness verdict. It checks shape; the defects that matter are semantic. The acceptance test is the verdict, and it is authored by whoever owns the rule — never by the worker implementing it.
 - Don't delegate a task whose spec is longer than its implementation (measured: 1,803 spec tokens for a 369-token function). Delegate scaffolding and boilerplate; keep the pure logic, unless the explicit point is to measure the worker.
@@ -50,6 +50,12 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - Design patterns earn their place. I reach for one when it removes real complexity, not to decorate a class diagram — a pattern that needs explaining twice probably wasn't needed once.
 - **Scripts I write for myself are kept and reused, never improvised twice.** If a script will run more than once — a parser, a capture helper, a reconciliation, a cleanup, a diagnostic — it goes into the repo it serves (`scripts/` with a runner entry) or into `scripts/` when it is cross-project, *not* into the session scratchpad. His rule, stated 2026-08-16, and it is general: it costs fewer tokens than re-deriving the thing and it keeps the behaviour identical each run. A scratchpad script is invisible to the next session and to the other machine, so what gets re-derived drifts. **The test is whether the script has future value, not whether the answer does** — a one-time diff or an exploratory query is a genuine throwaway; anything I would write a second time is not. Before writing a helper, check whether I already wrote it. Cross-project helpers that exist today: **`scripts/on-mac.sh`** — runs a command on the Mac inside a workspace project, because on this two-machine share Docker on the Windows side cannot bind-mount the workspace (it mounts *empty and silently*) and git object writes fail over SMB from there. Use it for any build, test or git operation against `<workspace>`; `sync-memory.sh` and `claude-bootstrap.sh` are the other two.
 - Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
+
+### TDD rule
+
+Every code change in a coding session is test-first, whether or not any skill triggers: write a failing test that fails for the right reason, write the minimum code to pass, go green, then refactor. **One failing test per lap** — a batch of assertions handed over at once is test-first, not TDD, and it measurably costs more (see the measurement below). Bugs get a regression test before the fix, and the test stays in the suite. Non-trivial logic (a branch, a loop, a parser, a money or security path) always leaves at least one runnable check behind.
+
+Exempt, and only these (CLAUDE.md's list): pure reads, one-line typo or formatting edits with no behaviour change, and work he has explicitly told me to do without planning. When I skip, I say so. The method is `superpowers:test-driven-development`; this section is the obligation, and it binds even when that skill does not fire.
 
 ### Why one test per lap — the measurement
 
@@ -64,6 +70,10 @@ Under the batch prompt it wrote local-calendar date arithmetic that drifts acros
 one narrow test it reached for the millisecond form unprompted. The size of the target mattered more
 than the model. A small lap also caught a bug the spec never mentioned (a future-dated posting counting
 as "recent").
+
+### Headless `claude -p`
+
+Every `claude -p` a project runs starts from an empty, dedicated folder, never the project tree. `--setting-sources project` keeps his user hooks, plugins and CLAUDE.md out of the run, but it ALSO drops the claude.ai connectors (Gmail, Indeed, ...) — measured 2026-10-30, with or without `--strict-mcp-config`. A job that needs a connector therefore uses a `--settings` layer that disables hooks and plugins instead of `--setting-sources project`.
 
 ## Commits
 
