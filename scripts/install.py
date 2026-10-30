@@ -34,6 +34,16 @@ def harness_dir(argv):
             return Path(a.split("=", 1)[1]).resolve()
     return HARNESS
 
+def interpreter(osname=os.name, which=shutil.which, exe=sys.executable):
+    """The Python a hook command calls. POSIX: python3. Windows: python3 is a Store
+    stub, so the py launcher, else the Python running this installer (forward
+    slashes, since hooks run under bash)."""
+    if osname != "nt":
+        return "python3"
+    from pathlib import PureWindowsPath
+    return "py -3" if which("py") else PureWindowsPath(exe).as_posix()
+
+
 # Three groups, not eight yes/nos. The split is by what each hook actually needs:
 # six want the context repo (which most strangers will not have), one wants only a
 # writable .plans/, and exactly one depends on nothing at all.
@@ -46,14 +56,14 @@ GROUPS = {
             ("UserPromptSubmit", None, "bash {h}/wrong.sh {ctx} --hook", 10, False),
             ("PostToolUse", "Write|Edit", "bash {h}/sync-memory.sh {ctx}", 90, True),
             ("Stop", None, "bash {h}/sync-memory.sh {ctx}", 90, True),
-            ("Stop", None, "python3 {h}/session-audit.py {ctx}", 30, True),
+            ("Stop", None, "{py} {h}/session-audit.py {ctx}", 30, True),
         ],
     },
     "budget": {
         "needs": "nothing",
         "hooks": [
             ("UserPromptSubmit", None,
-             "CONTEXT_WINDOW=${{CONTEXT_WINDOW:-1000000}} python3 {h}/context-budget.py --hook",
+             "CONTEXT_WINDOW=${{CONTEXT_WINDOW:-1000000}} {py} {h}/context-budget.py --hook",
              10, False),
         ],
     },
@@ -107,7 +117,7 @@ def selftest():
     def ok(m):
         print(f"  ok   {m}")
 
-    paths = {"h": "/opt/harness/scripts", "ctx": "/opt/context"}
+    paths = {"h": "/opt/harness/scripts", "ctx": "/opt/context", "py": "python3"}
 
     # 1. THE case. A stranger's own hook must survive the merge untouched.
     theirs = {
@@ -191,6 +201,18 @@ def selftest():
                 bad("write_env ignored its target")
             else:
                 ok("--harness-dir redirects the .env write away from the live config")
+
+    # 8. Windows has no real python3: the name is a Microsoft Store stub that prints
+    #    "Python was not found", so a hook wired with it never runs (2026-10-30: the PC
+    #    had never written a sessions.tsv row). POSIX keeps python3 so existing
+    #    commands stay byte-identical and a re-run adds nothing.
+    got = (interpreter("posix", lambda n: "/usr/bin/" + n, "/usr/bin/python3"),
+           interpreter("nt", lambda n: "C:/Windows/py.exe" if n == "py" else None, "C:\\x\\python.exe"),
+           interpreter("nt", lambda n: None, "C:\\x\\python.exe"))
+    if got != ("python3", "py -3", "C:/x/python.exe"):
+        bad(f"interpreter choice wrong: {got}")
+    else:
+        ok("hooks use python3 on POSIX, the py launcher (or this Python) on Windows")
 
     if fails:
         print(f"selftest FAILED ({len(fails)})")
@@ -300,7 +322,7 @@ def main(argv):
     if chosen:
         current = json.loads(settings.read_text()) if settings.exists() else {}
         merged = merge_hooks(current, chosen,
-                             {"h": str(HERE), "ctx": ctx or ""})
+                             {"h": HERE.as_posix(), "ctx": ctx or "", "py": interpreter()})
         if merged == current:
             print("  settings.json already has these hooks — nothing to do")
         elif dry:
