@@ -3,6 +3,7 @@ import { timingSafeEqual, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { open } from './store.ts';
 import { parse } from './ingest.ts';
+import { backup } from './backup.ts';
 
 const LIMIT = 5 * 1024 * 1024;
 const sha = (s: string) => createHash('sha256').update(s).digest();
@@ -52,5 +53,19 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1);
   }
   const port = Number(process.env.RECEIVER_PORT ?? 4318);
-  createServer(open(process.env.DB_PATH ?? './otel.db'), key).listen(port, () => console.log(`receiver listening on ${port}`));
+  const db = open(process.env.DB_PATH ?? './otel.db');
+  createServer(db, key).listen(port, () => console.log(`receiver listening on ${port}`));
+  const dir = process.env.BACKUP_DIR;
+  if (dir) {
+    const run = () => {
+      try {
+        const f = backup(db, dir);
+        if (f) console.log(`backup written: ${f}`);
+      } catch (e) {
+        console.error(`backup failed: ${(e as Error).message}`);
+      }
+    };
+    run();
+    setInterval(run, 6 * 3600 * 1000); // a new file once per day; the check is cheap
+  }
 }

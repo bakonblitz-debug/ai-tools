@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY ingest.ts store.ts server.ts ./
+COPY ingest.ts store.ts server.ts backup.ts ./
 ENV DB_PATH=/data/db/otel.db
 EXPOSE 4318
 CMD ["node", "--experimental-strip-types", "server.ts"]

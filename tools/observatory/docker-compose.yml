@@ -10,3 +10,18 @@ services:
     environment:
       TZ: ${TZ:-UTC}
     restart: unless-stopped
+
+  # OTLP/HTTP JSON receiver: the only port that listens beyond localhost, behind OBSERVATORY_KEY.
+  receiver:
+    build: ./receiver
+    restart: unless-stopped
+    ports:
+      - "${RECEIVER_BIND:-0.0.0.0}:${RECEIVER_PORT:-4318}:4318"
+    volumes:
+      - ${DB_DIR}:/data/db
+      - ${BACKUP_DIR}:/data/backups
+    environment:
+      OBSERVATORY_KEY: ${OBSERVATORY_KEY:?set OBSERVATORY_KEY in .env}
+      DB_PATH: /data/db/otel.db
+      BACKUP_DIR: /data/backups
+      TZ: ${TZ:-UTC}
