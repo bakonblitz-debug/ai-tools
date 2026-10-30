@@ -28,6 +28,8 @@
 #   context-index.sh <context-repo-root> --check    # drift only, no writes
 #   context-index.sh --selftest                     # synthetic fixtures
 set -euo pipefail
+# The self-test re-runs this script; a bare $0 ("wrong.sh") is not a runnable path.
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 GEN_OPEN='<!-- generated: leaves -->'
 GEN_CLOSE='<!-- /generated -->'
@@ -224,7 +226,7 @@ selftest() {
   printf '# Able leaf title\n\nbody\n' > "$t/context/alpha/able-2-20260102.md"
   ( cd "$t" && git add -A && git commit -qm one )
 
-  "$0" "$t" >/dev/null
+  "$SELF" "$t" >/dev/null
 
   grep -qF 'hand-written prose stays' "$t/context/alpha/CONTEXT.md" || bad "human prose was clobbered"
   ok "human prose outside the delimiters survives"
@@ -240,25 +242,25 @@ selftest() {
 
   printf -- '- [zeta-1-20260101.md](zeta-1-20260101.md) — curated by hand\n' >> "$t/context/beta/CONTEXT.md"
   printf '# Zeta in beta\n' > "$t/context/beta/zeta-1-20260101.md"
-  "$0" "$t" >/dev/null
+  "$SELF" "$t" >/dev/null
   [ "$(grep -c 'zeta-1-20260101.md' "$t/context/beta/CONTEXT.md")" = 1 ] ||
     bad "a hand-curated leaf was duplicated by the generated block"
   ok "curated pointers are not duplicated"
 
   cp "$t/context/alpha/CONTEXT.md" "$t/before"
-  "$0" "$t" >/dev/null
+  "$SELF" "$t" >/dev/null
   cmp -s "$t/before" "$t/context/alpha/CONTEXT.md" || bad "second run changed the file (not idempotent)"
   ok "idempotent"
 
-  "$0" "$t" --check >/dev/null || bad "--check reported drift on a freshly generated tree"
+  "$SELF" "$t" --check >/dev/null || bad "--check reported drift on a freshly generated tree"
   ok "--check is green when current"
 
   printf '# New leaf\n' > "$t/context/beta/new-3-20260103.md"
   ( cd "$t" && git add -A && git commit -qm two )
-  if "$0" "$t" --check >/dev/null 2>&1; then bad "--check missed an unindexed new leaf"; fi
+  if "$SELF" "$t" --check >/dev/null 2>&1; then bad "--check missed an unindexed new leaf"; fi
   ok "--check catches an unindexed leaf"
 
-  "$0" "$t" >/dev/null
+  "$SELF" "$t" >/dev/null
   grep -q '^2[0-9-]* | [0-9a-f]\{7,\} | [AMDR] | zeta-1-20260101.md | +[0-9]* -[0-9]*$' \
     "$t/context/alpha/LEDGER.md" || bad "ledger line grammar wrong: $(head -1 "$t/context/alpha/LEDGER.md")"
   ok "ledger lines carry date, sha, status, file, deltas"
@@ -271,16 +273,16 @@ selftest() {
   ok "ledger records the rev it was generated at"
 
   ( cd "$t" && git add -A && git commit -qm three )
-  "$0" "$t" --check >/dev/null 2>&1 ||
+  "$SELF" "$t" --check >/dev/null 2>&1 ||
     bad "a new commit made --check red — the ledger always trails HEAD by one and that is not drift"
   ok "--check survives history moving on"
 
   printf 'hand-written rubbish\n' >> "$t/context/alpha/LEDGER.md"
-  if "$0" "$t" --check >/dev/null 2>&1; then bad "--check missed a hand-edited ledger"; fi
+  if "$SELF" "$t" --check >/dev/null 2>&1; then bad "--check missed a hand-edited ledger"; fi
   ok "--check catches a hand-edited ledger"
 
   empty=$(mktemp -d)
-  if "$0" "$empty" >/dev/null 2>&1; then bad "scanning nothing exited 0"; fi
+  if "$SELF" "$empty" >/dev/null 2>&1; then bad "scanning nothing exited 0"; fi
   rm -rf "$empty"
   ok "fails loudly when it scans nothing"
 

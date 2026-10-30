@@ -15,6 +15,8 @@
 # caught_by `him`. Classification is a later, optional step: an unclassified row
 # is still a recorded failure, and leaving it unclassified must never lose it.
 set -u
+# The self-test re-runs this script; a bare $0 ("wrong.sh") is not a runnable path.
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 # Rotated by calendar year. Mechanical, no judgement, and it caps file size without
 # anyone deciding what belongs where — which is the reason the log is NOT split by
@@ -72,26 +74,26 @@ selftest() {
   ok() { echo "  ok   $1"; }
   bad() { echo "  FAIL $1"; exit 1; }
 
-  "$0" "$t" "you sent an email during a test" >/dev/null
+  "$SELF" "$t" "you sent an email during a test" >/dev/null
   log="$t/$(log_rel)"
   [ -f "$log" ] || bad "the yearly log was not created on first use"
   grep -q '| unclassified | him | you sent an email during a test |' "$log" ||
     bad "direct append did not land verbatim: $(tail -1 "$log")"
   ok "creates the yearly log and appends verbatim with caught_by=him"
 
-  WRONG_TOPIC=jobhunt printf '{"prompt":"wrong: the letter had AI padding again"}' | WRONG_TOPIC=jobhunt "$0" "$t" --hook >/dev/null
+  WRONG_TOPIC=jobhunt printf '{"prompt":"wrong: the letter had AI padding again"}' | WRONG_TOPIC=jobhunt "$SELF" "$t" --hook >/dev/null
   grep -q 'the letter had AI padding again' "$log" || bad "hook did not record a wrong: prompt"
   tail -1 "$log" | grep -q '| jobhunt$' || bad "WRONG_TOPIC did not land in the topic field"
   ok "hook records a wrong: prompt, with the topic field when given"
 
   before=$(grep -c '^2' "$log")
-  printf '{"prompt":"what is the status of the ledger"}' | "$0" "$t" --hook >/dev/null
+  printf '{"prompt":"what is the status of the ledger"}' | "$SELF" "$t" --hook >/dev/null
   [ "$(grep -c '^2' "$log")" = "$before" ] || bad "an ordinary prompt was recorded as a failure"
   ok "an ordinary prompt is a no-op"
 
   # \\t, not a literal tab: a raw tab inside a JSON string is invalid JSON, which
   # made this case silently no-op and the assertion below read a stale row.
-  printf '{"prompt":"wrong: pipes | and\\ttabs must not break the row"}' | "$0" "$t" --hook >/dev/null
+  printf '{"prompt":"wrong: pipes | and\\ttabs must not break the row"}' | "$SELF" "$t" --hook >/dev/null
   # The pipe and the tab both become a space, then runs collapse: one space each.
   tail -1 "$log" | grep -q 'pipes and tabs must not break the row' ||
     bad "pipes/tabs case did not record: $(tail -1 "$log")"
@@ -100,7 +102,7 @@ selftest() {
   ok "pipes and tabs in his text cannot break the field count"
 
   before=$(grep -c '^2' "$log")
-  printf '{"prompt":"wrong:   "}' | "$0" "$t" --hook >/dev/null 2>&1
+  printf '{"prompt":"wrong:   "}' | "$SELF" "$t" --hook >/dev/null 2>&1
   [ "$(grep -c '^2' "$log")" = "$before" ] || bad "an empty report was recorded"
   ok "an empty report is refused"
 

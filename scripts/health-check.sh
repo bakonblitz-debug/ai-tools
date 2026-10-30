@@ -129,21 +129,24 @@ check_harness_map_covers_files() {
   echo "$((n / 2)) files on both maps"
 }
 
-# clone-test.sh is the gate for stranger-installability, and on 2026-09-29 its one
-# real assertion was found to be incapable of failing. A guard that cannot fail needs
-# a guard of its own.
-check_clone_test_selftest() {
-  [ -f "$SCRIPTS/clone-test.sh" ] || { echo "clone-test.sh missing"; return 1; }
-  out=$(bash "$SCRIPTS/clone-test.sh" --selftest 2>&1) \
-    || { echo "${out:-selftest failed}"; return 1; }
-  echo "$(printf '%s' "$out" | grep -c '^  ok') cases"
-}
-
-check_digest_selftest() {
-  [ -f "$SCRIPTS/session-todo.sh" ] || { echo "session-todo.sh missing"; return 1; }
-  out=$(bash "$SCRIPTS/session-todo.sh" --selftest 2>&1) \
-    || { echo "${out:-selftest failed}"; return 1; }
-  echo "$out"
+# Every script that dispatches on --selftest gets run, found by grep, never a hand-kept
+# list: on 2026-10-28 this file ran 2 of 11. A mention in a comment does not count
+# (context-check-monthly.sh mentions it and is a real job that writes files).
+check_script_selftests() {
+  n=0; bad=""; skip=""
+  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py 2>/dev/null | LC_ALL=C sort); do
+    n=$((n + 1))
+    case $f in *.py) run=python3 ;; *) run=bash ;; esac
+    command -v "$run" >/dev/null 2>&1 || { skip="$skip ${f##*/}"; continue; }
+    # By bare name from its own folder, the way he runs one by hand: a script that
+    # re-runs itself through a raw $0 fails here (3 did, 2026-10-28).
+    # perl alarm because macOS has no timeout(1); SIGALRM exits 142.
+    (cd "$SCRIPTS" && perl -e 'alarm shift; exec @ARGV or exit 127' "${SELFTEST_LIMIT:-60}" "$run" "${f##*/}" --selftest </dev/null >/dev/null 2>&1)
+    case $? in 0) ;; 142) bad="$bad ${f##*/} (timed out)" ;; *) bad="$bad ${f##*/}" ;; esac
+  done
+  [ "$n" -gt 0 ] || { echo "found no script with a --selftest"; return 1; }
+  [ -z "$bad" ] || { echo "selftest failed:$bad"; return 1; }
+  echo "$n scripts${skip:+, no interpreter so skipped$skip}"
 }
 
 # The derived-value check. The count changes as work is done, so asserting a number
@@ -368,6 +371,25 @@ b
 ' > "$tree/sub/leaf-1-20260101.md"
     ctx_expect 1 check_context_leaves_only_grow
   fi
+
+  # --- 5. script selftests: a mention is not a selftest, and none found must FAIL ---
+  SCRIPTS=$t/scripts; mkdir -p "$SCRIPTS"
+  printf '# runs context-index.sh --selftest; echo real job\n' > "$SCRIPTS/mentions.sh"
+  ctx_expect 1 check_script_selftests
+  printf 'case $1 in --selftest) exit 1 ;; esac\n' > "$SCRIPTS/red.sh"
+  ctx_expect 1 check_script_selftests
+  rm "$SCRIPTS/red.sh"
+  printf 'case $1 in --selftest) exit 0 ;; esac\n' > "$SCRIPTS/green.sh"
+  printf 'import sys\nsys.exit(0 if "--selftest" in sys.argv else 2)\n' > "$SCRIPTS/green.py"
+  ctx_expect 0 check_script_selftests
+  printf 'case $1 in --selftest) sleep 30 ;; esac\n' > "$SCRIPTS/hang.sh"
+  out=$(SELFTEST_LIMIT=1 check_script_selftests)
+  case $out in *"hang.sh (timed out)"*) ;; *) echo "  FAIL: a hung selftest gave: $out"; ST_FAIL=1 ;; esac
+  rm "$SCRIPTS/hang.sh"
+  # a machine with no python3: .py selftests are skipped, not failed
+  mkdir "$t/bin"; for c in bash perl grep sort; do ln -s "$(command -v $c)" "$t/bin/$c"; done
+  out=$(PATH=$t/bin check_script_selftests); rc=$?
+  case "$rc $out" in "0 "*"skipped green.py"*) ;; *) echo "  FAIL: no python3 gave $rc: $out"; ST_FAIL=1 ;; esac
 
   [ "$ST_FAIL" = 0 ] && { echo "context selftest OK — every check fails on a broken tree and passes on a clean one"; return 0; }
   echo "context selftest FAILED"; return 1

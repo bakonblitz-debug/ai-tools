@@ -101,7 +101,8 @@ is spelled out as conditions something either meets or does not:
    confidence, which is worse than no lint.
 3. **Tests live with the script.** An embedded `--selftest` over synthetic fixtures, following
    `session-todo.sh` and `context-index.sh`. Synthetic because these scripts ship in the public repo
-   and the real data carries PII.
+   and the real data carries PII. `health-check.sh script_selftests` finds every script that dispatches
+   `--selftest` and runs them all, so a new selftest is picked up with no list to update.
 4. **Determinism is a requirement, not a preference.** Same input, same bytes. `LC_ALL=C` on every
    sort, no timestamps in generated output, no dependence on `find` order or locale. Two machines must
    produce identical files.

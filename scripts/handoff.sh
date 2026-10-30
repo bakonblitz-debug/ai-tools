@@ -23,6 +23,8 @@
 # A plan is open when its `## Status` section says `open`. Closing one is editing
 # that line, which is also what stops it being injected.
 set -u
+# The self-test re-runs this script; a bare $0 ("wrong.sh") is not a runnable path.
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 PLANS="${PLANS_DIR:-$HOME/www/.plans}"
 MAX_LINES=${HANDOFF_MAX_LINES:-400}
@@ -123,57 +125,57 @@ selftest() {
   printf '# One\n\n## Status\nopen\n\nbody-one\n' > "$t/handoff-alpha.md"
   printf '# Two\n\n## Status\ndone\n\nbody-two\n' > "$t/handoff-beta.md"
 
-  out=$(printf '{"prompt":"handoff"}' | "$0" --hook)
+  out=$(printf '{"prompt":"handoff"}' | "$SELF" --hook)
   case $out in *body-one*) ;; *) bad "the single open plan was not emitted" ;; esac
   case $out in *body-two*) bad "a closed plan was emitted" ;; esac
   ok "emits the open plan and never a closed one"
 
   printf '# Three\n\n## Status\nopen\n\nbody-three\n' > "$t/handoff-gamma.md"
-  out=$(printf '{"prompt":"handoff"}' | "$0" --hook)
+  out=$(printf '{"prompt":"handoff"}' | "$SELF" --hook)
   case $out in *"2 open plans"*) ;; *) bad "two open plans should produce a chooser: $out" ;; esac
   ok "several open plans produce a list, not a guess"
 
-  out=$(printf '{"prompt":"handoff gamma"}' | "$0" --hook)
+  out=$(printf '{"prompt":"handoff gamma"}' | "$SELF" --hook)
   case $out in *body-three*) ;; *) bad "topic match failed" ;; esac
   ok "a topic picks the plan"
 
-  out=$(printf '{"prompt":"what did we say about the handoff protocol"}' | "$0" --hook)
+  out=$(printf '{"prompt":"what did we say about the handoff protocol"}' | "$SELF" --hook)
   [ -z "$out" ] || bad "a sentence containing the word must not inject: $out"
   ok "only a bare handoff prompt triggers"
 
   printf '# Four\n\nno status section at all\n' > "$t/handoff-delta.md"
-  out=$(printf '{"prompt":"handoff delta"}' | "$0" --hook)
+  out=$(printf '{"prompt":"handoff delta"}' | "$SELF" --hook)
   case $out in *"no open plan matching"*) ;; *) bad "a plan with no Status must not count as open: $out" ;; esac
   ok "a plan with no Status is not open"
 
   rm -f "$t"/handoff-*.md
-  out=$(printf '{"prompt":"handoff"}' | "$0" --hook)
+  out=$(printf '{"prompt":"handoff"}' | "$SELF" --hook)
   case $out in *"no open plan"*) ;; *) bad "empty case should say so: $out" ;; esac
   ok "says so when there is nothing open"
 
-  auto=$("$0" --auto-path /Users/me/www/proj)
+  auto=$("$SELF" --auto-path /Users/me/www/proj)
   [ "$auto" = "$t/handoff-auto-Users-me-www-proj.md" ] || bad "auto path is not derived from the cwd: $auto"
   ok "the automatic plan's path is derived from the session's folder"
 
   printf '# Auto\n\n## Status\nopen\n\nbody-auto\n' > "$auto"
-  out=$(printf '{"source":"clear","cwd":"/Users/me/www/proj"}' | "$0" --session-start)
+  out=$(printf '{"source":"clear","cwd":"/Users/me/www/proj"}' | "$SELF" --session-start)
   case $out in *body-auto*) ;; *) bad "a cleared session did not get its plan: $out" ;; esac
-  out=$(printf '{"source":"compact","cwd":"/Users/me/www/proj"}' | "$0" --session-start)
+  out=$(printf '{"source":"compact","cwd":"/Users/me/www/proj"}' | "$SELF" --session-start)
   case $out in *body-auto*) ;; *) bad "a compacted session did not get its plan: $out" ;; esac
   ok "a cleared or compacted session gets its folder's plan with no prompt"
 
-  out=$(printf '{"source":"resume","cwd":"/Users/me/www/proj"}' | "$0" --session-start)
+  out=$(printf '{"source":"resume","cwd":"/Users/me/www/proj"}' | "$SELF" --session-start)
   [ -z "$out" ] || bad "a resumed session already has its context: $out"
-  out=$(printf '{"source":"startup","cwd":"/Users/me/www/other"}' | "$0" --session-start)
+  out=$(printf '{"source":"startup","cwd":"/Users/me/www/other"}' | "$SELF" --session-start)
   [ -z "$out" ] || bad "another folder's plan leaked in: $out"
   ok "a resumed session or another folder gets nothing"
 
-  out=$(printf '{"source":"clear","cwd":"/Users/me/www/proj/sub"}' | CLAUDE_PROJECT_DIR=/Users/me/www/proj "$0" --session-start)
+  out=$(printf '{"source":"clear","cwd":"/Users/me/www/proj/sub"}' | CLAUDE_PROJECT_DIR=/Users/me/www/proj "$SELF" --session-start)
   case $out in *body-auto*) ;; *) bad "the launch folder must win over a cwd the session moved to: $out" ;; esac
   ok "the launch folder wins over wherever the session cd'd to"
 
   printf '# Auto\n\n## Status\ndone\n\nbody-auto\n' > "$auto"
-  out=$(printf '{"source":"startup","cwd":"/Users/me/www/proj"}' | "$0" --session-start)
+  out=$(printf '{"source":"startup","cwd":"/Users/me/www/proj"}' | "$SELF" --session-start)
   [ -z "$out" ] || bad "a closed automatic plan was injected: $out"
   ok "a closed automatic plan stays out"
 
