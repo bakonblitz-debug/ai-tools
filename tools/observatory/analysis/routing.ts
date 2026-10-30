@@ -7,7 +7,7 @@ export function costTable(usage: Row[], sessions: Row[]) {
   for (const s of sessions) if (s.model != null && s.model !== '') model.set(String(s.session), String(s.model));
   const cells = new Map<string, { model: string; effort: string; activity: string; requests: number; cost_usd: number; out: number; sess: Set<string> }>();
   for (const u of usage) {
-    const sid = String(u.session).split('/')[0];
+    const sid = String(u.session).split('/')[0]!;
     const m = model.get(sid);
     if (!m) continue;
     const effort = u.effort ? String(u.effort) : NOT_SET;

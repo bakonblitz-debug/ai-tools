@@ -4,7 +4,7 @@ export type SessionRow = {
   session: string; date: string; machine: string; scratch: number; active_s: number | null; assistant_msgs: number | null;
   interruptions: number | null; tool_errors: number | null; denials: number | null; tokens_in: number | null;
   tokens_out: number | null; cache_read: number | null; cache_create: number | null; model: string | null;
-  agent_kind: string;
+  agent_kind: string; project?: string; started?: string | null; ended?: string | null; duration_s?: number | null;
 };
 export type UsageRow = {
   session: string; date: string; machine: string; scratch: number; agent: string; requests: number | null; cost_usd: number | null; effort: string | null;

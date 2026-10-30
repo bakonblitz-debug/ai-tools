@@ -6,6 +6,7 @@ services:
     volumes:
       - ${METRICS_DIR}:/data/metrics:ro
       - ${DB_DIR}:/data/db
+      - ${HARNESS_REPO:-.}:/data/harness:ro
     env_file: .env
     environment:
       TZ: ${TZ:-UTC}
