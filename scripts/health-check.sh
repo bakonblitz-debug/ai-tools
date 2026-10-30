@@ -295,6 +295,47 @@ check_context_active_is_derived() {
   echo "ACTIVE.md agrees with the tree ($now items)"
 }
 
+# CLAUDE.md said `superpowers` was disabled while settings had it enabled for weeks
+# (fixed by hand 2026-10-14). The prose could not be checked; this marker line can:
+#   `plugins: id@market=on|off ...`
+# Effective state = enabledPlugins merged per key over the user file, then the workspace
+# project and local files (later wins). A plugin that is `off` may be absent; `on` may not.
+# A CLAUDE.md with no marker FAILs, never SKIPs: rewording the line must break loudly.
+# The interpreter is probed by running it, because the PC's python3 is a Store stub that
+# exists and fails. Paths go in as argv, not into the -c source: Git Bash converts POSIX
+# paths only for argv handed to a native Windows exe.
+check_plugins_match_claude_md() {
+  local py=""
+  for c in python3 python py; do
+    have "$c" && "$c" -c 'import json' >/dev/null 2>&1 && { py=$c; break; }
+  done
+  [ -n "$py" ] || { echo "no working python3/python/py to read settings.json"; return 77; }
+  "$py" -c '
+import json, os, re, sys
+md, *layers = sys.argv[1:]
+if not os.path.isfile(md): print("no CLAUDE.md at " + md); sys.exit(77)
+pairs = []
+for line in open(md, encoding="utf-8"):
+    if "`plugins:" in line:
+        body = line.split("`plugins:", 1)[1].split("`", 1)[0]
+        pairs = [m.groups() for t in body.split() if (m := re.fullmatch(r"([^=\s]+)=(on|off)", t))]
+        break
+if not pairs: print("no valid `plugins: id=on|off` marker in " + md); sys.exit(1)
+eff, src, seen = {}, {}, False
+for p in layers:
+    if not os.path.isfile(p): continue
+    seen = True
+    try: d = json.load(open(p, encoding="utf-8")).get("enabledPlugins", {})
+    except Exception as e: print("unreadable " + p + ": " + str(e)); sys.exit(1)
+    for k, v in d.items(): eff[k] = v; src[k] = p
+if not seen: print("no settings.json in any layer"); sys.exit(77)
+bad = ["%s declared %s, settings say %s%s" % (i, w, eff.get(i, "absent"), " (" + src[i] + ")" if i in src else "")
+       for i, w in pairs if (eff.get(i) is True) != (w == "on")]
+if bad: print("; ".join(bad)); sys.exit(1)
+print("%d declaration(s) in %s agree with settings" % (len(pairs), md))
+' "$WWW/CLAUDE.md" "$HOME/.claude/settings.json" "$WWW/.claude/settings.json" "$WWW/.claude/settings.local.json"
+}
+
 # ==================================================================================
 # Selftest — proves the context checks FAIL on a broken tree.
 #
@@ -390,6 +431,29 @@ b
   mkdir "$t/bin"; for c in bash perl grep sort; do ln -s "$(command -v $c)" "$t/bin/$c"; done
   out=$(PATH=$t/bin check_script_selftests); rc=$?
   case "$rc $out" in "0 "*"skipped green.py"*) ;; *) echo "  FAIL: no python3 gave $rc: $out"; ST_FAIL=1 ;; esac
+
+  # --- 6. plugin declarations vs settings (HOME/WWW set per subshell, so the PATH case
+  # above and the real machine never leak in) ------------------------------------------
+  p6mk() { rm -rf "$t/h" "$t/w"; mkdir -p "$t/h/.claude" "$t/w/.claude"
+    printf -- '- Plugin state, checked by `health-check.sh`: `plugins: %s`\n' "$1" > "$t/w/CLAUDE.md"; }
+  p6() { ( HOME=$t/h; WWW=$t/w; ctx_expect "$1" check_plugins_match_claude_md; [ "$ST_FAIL" = 0 ] ) || ST_FAIL=1; }
+  p6mk 'a@m=off'; echo '{"enabledPlugins":{"a@m":true}}' > "$t/h/.claude/settings.json"
+  p6 1                                   # declared off, user says true
+  echo '{"enabledPlugins":{"a@m":false}}' > "$t/h/.claude/settings.json"
+  echo '{"enabledPlugins":{"a@m":true}}' > "$t/w/.claude/settings.local.json"
+  p6 1                                   # a later layer overrides the user's false
+  p6mk 'a@m=on'; echo '{"enabledPlugins":{}}' > "$t/h/.claude/settings.json"
+  p6 1                                   # declared on, absent
+  p6mk 'a@m=off'; echo '{"enabledPlugins":{}}' > "$t/h/.claude/settings.json"
+  p6 0                                   # declared off, absent = not enabled
+  echo '{not json' > "$t/h/.claude/settings.json"
+  p6 1                                   # invalid JSON in a present layer
+  echo '{"enabledPlugins":{}}' > "$t/h/.claude/settings.json"; echo '- no marker here' > "$t/w/CLAUDE.md"
+  p6 1                                   # CLAUDE.md without the marker
+  p6mk 'a@m=off b@m=on'; echo '{"enabledPlugins":{"a@m":false,"b@m":true}}' > "$t/h/.claude/settings.json"
+  p6 0                                   # all agree
+  rm -f "$t/h/.claude/settings.json"
+  p6 77                                  # no settings file in any layer
 
   [ "$ST_FAIL" = 0 ] && { echo "context selftest OK — every check fails on a broken tree and passes on a clean one"; return 0; }
   echo "context selftest FAILED"; return 1
