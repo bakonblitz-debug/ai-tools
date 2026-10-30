@@ -33,7 +33,9 @@ Usage:
 import json
 import os
 import re
+import socket
 import sys
+import time
 from pathlib import Path
 
 PROJECTS = Path.home() / ".claude" / "projects"
@@ -64,7 +66,7 @@ def excerpt(text):
     return (one[: EXCERPT - 1] + "…") if len(one) > EXCERPT else one
 
 
-USAGE_COLUMNS = ["session", "date", "project", "agent", "activity", "requests", "output", "thinking", "cost_usd"]
+USAGE_COLUMNS = ["session", "date", "project", "agent", "activity", "requests", "output", "thinking", "cost_usd", "effort"]
 INPUT_COLUMNS = ["session", "date", "project", "agent", "source", "kind", "tokens", "images"]
 HOOK_COLUMNS = ["session", "date", "project", "agent", "event", "hook", "runs", "errors", "duration_ms"]
 HARNESS_TOOLS = {"ToolSearch", "AskUserQuestion", "Artifact", "ArtifactComments", "ArtifactData",
@@ -308,7 +310,7 @@ def scan(path):
     # context retrieval, and "suspected" is why this is measured rather than argued.
     targets = {}
     candidates = []
-    usage, model_of = {}, {}
+    usage, model_of, effort_of = {}, {}, {}
     calls = {}  # requestId -> set of activities its tool calls belong to
     arrivals, pending, tool_meta = {}, [], {}
     first_prompt = None  # only its first line is read, for a [hook:<name>] tag
@@ -350,6 +352,7 @@ def scan(path):
                 arrivals[rid], pending = pending, []
             usage[rid] = msg.get("usage") or {}
             model_of[rid] = msg.get("model") or model_of.get(rid, "")
+            effort_of[rid] = rec.get("effort") or effort_of.get(rid, "")  # absent before ~2026-10
             for block in msg.get("content") or []:
                 if not isinstance(block, dict):
                     continue
@@ -478,7 +481,7 @@ def scan(path):
         if usd is None:
             m["unpriced"].add(model_of[rid])
         for k in kinds:  # ponytail: even split; weight by block size if it misleads
-            a = m["activity"].setdefault(k, {"requests": 0, "output": 0, "thinking": 0, "cost": 0})
+            a = m["activity"].setdefault((k, effort_of[rid]), {"requests": 0, "output": 0, "thinking": 0, "cost": 0})
             a["requests"] += 1 / len(kinds)
             a["output"] += out / len(kinds)
             a["thinking"] += think / len(kinds)
@@ -667,7 +670,7 @@ def selftest():
     want = {"coding": (1, 100, 40), "reading": (1.5, 100, 0), "verifying": (0.5, 40, 0),
             "answering": (1, 30, 0), "planning": (1.5, 26, 0), "browser": (1, 10, 0),
             "delegating": (0.5, 6, 0)}
-    got = {k: (v["requests"], v["output"], v["thinking"]) for k, v in m["activity"].items()}
+    got = {k[0]: (v["requests"], v["output"], v["thinking"]) for k, v in m["activity"].items()}  # no effort in fixture
     if got != want:
         bad(f"output by activity wrong: {got}")
     ok("output and thinking are booked to the activity of each request, mixed requests split evenly")
@@ -819,7 +822,7 @@ def selftest():
         # 1000·1 + 1000·5 = $0.006
         + priced("c3", "2026-01-01T10:00:02", "claude-haiku-4-5-20251001", 1000, 0, 0, 0, 1000))
     m, _ = scan(p)
-    got = {k: round(v.get("cost", 0), 6) for k, v in m["activity"].items()}
+    got = {k[0]: round(v.get("cost", 0), 6) for k, v in m["activity"].items()}
     if got != {"coding": 0.05, "answering": 0.016}:
         bad(f"cost by activity wrong, want coding 0.05, answering 0.016: {got}")
     m, _ = scan(transcript("unpriced.jsonl", [usage_msg("2026-01-01T10:00:00", model="claude-x-9", tout=5)]))
@@ -1018,12 +1021,13 @@ def selftest():
         usage_tsv = ctx_dir / "context" / "metrics" / "usage.tsv"
         urows = [l for l in usage_tsv.read_text(encoding="utf8").splitlines() if l and not l.startswith("#")] \
             if usage_tsv.exists() else []
-        if sorted(urows) != ["head1\t2026-01-01\tproj1\theadless\tanswering\t1\t7\t0\t0.000140",
-                             "hook1\t2026-01-01\tproj1\thook:summarize\tanswering\t1\t7\t0\t0.000140",
-                             "sess1\t2026-01-01\tproj1\tmain\tanswering\t1\t5\t0\t0.000000",
-                             "sess1\t2026-01-01\tproj1\tmain\tcoding\t1\t0\t0\t0.000000",
-                             "sess1/sub1\t2026-01-01\tproj1\tsubagent:Explore\tanswering\t1\t3\t0\t0.000000",
-                             "sess1/sub1\t2026-01-01\tproj1\tsubagent:Explore\tcoding\t1\t0\t0\t0.000000"]:
+        # The trailing empty field is effort: the fixture records carry none.
+        if sorted(urows) != ["head1\t2026-01-01\tproj1\theadless\tanswering\t1\t7\t0\t0.000140\t",
+                             "hook1\t2026-01-01\tproj1\thook:summarize\tanswering\t1\t7\t0\t0.000140\t",
+                             "sess1\t2026-01-01\tproj1\tmain\tanswering\t1\t5\t0\t0.000000\t",
+                             "sess1\t2026-01-01\tproj1\tmain\tcoding\t1\t0\t0\t0.000000\t",
+                             "sess1/sub1\t2026-01-01\tproj1\tsubagent:Explore\tanswering\t1\t3\t0\t0.000000\t",
+                             "sess1/sub1\t2026-01-01\tproj1\tsubagent:Explore\tcoding\t1\t0\t0\t0.000000\t"]:
             bad(f"usage.tsv wrong or duplicated after a rerun: {urows}")
         inputs_tsv = ctx_dir / "context" / "metrics" / "inputs.tsv"
         irows = [l for l in inputs_tsv.read_text(encoding="utf8").splitlines() if l and not l.startswith("#")] \
@@ -1157,6 +1161,72 @@ def selftest():
         bad("load_rows lost a good row or the header")
     ok("a row at an older column set is kept and counted, not silently truncated")
 
+    # 13. Effort is booked per request: the same activity at two efforts is two buckets.
+    def eff(rec, e):
+        rec["effort"] = e
+        return rec
+    m, _ = scan(transcript("effort.jsonl", [
+        eff(usage_msg("2026-01-01T10:00:00", tout=5, rid="e1"), "high"),
+        eff(usage_msg("2026-01-01T10:00:01", tout=7, rid="e2"), "low"),
+        usage_msg("2026-01-01T10:00:02", tout=1, rid="e3")]))   # older transcripts: no effort
+    got = {k: v["output"] for k, v in m["activity"].items()}
+    if got != {("answering", "high"): 5, ("answering", "low"): 7, ("answering", ""): 1}:
+        bad(f"effort not booked per request: {got}")
+    ok("output is booked per (activity, effort); a request without effort books under ''")
+
+    # 14. A write either lands whole or leaves the old file: no truncated TSV for a reader.
+    f = t / "atomic.tsv"
+    f.write_text("old\n", encoding="utf8")
+    write_atomic(f, "new\n")
+    try:
+        write_atomic(f, None)   # the write itself fails
+    except TypeError:
+        pass
+    if f.read_text(encoding="utf8") != "new\n" or list(t.glob("atomic.tsv.*")):
+        bad("write_atomic left a partial file or a temp file behind")
+    ok("write_atomic replaces whole files and leaves the old one on failure")
+
+    # 15. One lock per metrics dir: a second taker waits then gives up; a stale lock
+    #     (owner died) is taken over by the time written in it, not the server's mtime.
+    ld = t / "lockdir"
+    ld.mkdir()
+    first = take_lock(ld, wait=0)
+    if not first or take_lock(ld, wait=0.2):
+        bad("lock not taken, or taken twice")
+    release_lock(first)
+    if not take_lock(ld, wait=0):
+        bad("released lock could not be taken again")
+    (ld / LOCK).write_text(f"deadhost {time.time() - STALE_S - 1}", encoding="utf8")
+    if not take_lock(ld, wait=0):
+        bad("a stale lock was not taken over")
+    ok("the metrics lock excludes a second writer and recovers from a dead owner")
+
+    # 16. --out sends the TSVs to another dir (the PC's), candidates stay in the shared
+    #     metrics dir; a held lock makes the run skip without writing anything.
+    ctx16, pcout = t / "ctx16", t / "pcout"
+    (ctx16 / "context" / "metrics").mkdir(parents=True)
+    try:
+        PROJECTS = t / "projects"
+        sys.argv = ["session-audit.py", str(ctx16), "--all", "--out", str(pcout)]
+        held = take_lock(ctx16 / "context" / "metrics", wait=0)
+        main()
+        if pcout.exists() or (ctx16 / "context" / "metrics" / "candidates.md").exists():
+            bad("main() wrote while another run held the lock")
+        release_lock(held)
+        main()
+        if not (pcout / "sessions.tsv").exists() or (ctx16 / "context" / "metrics" / "sessions.tsv").exists():
+            bad("--out did not send sessions.tsv to the out dir")
+        if not (ctx16 / "context" / "metrics" / "candidates.md").exists() or (pcout / "candidates.md").exists():
+            bad("candidates.md must stay in the shared metrics dir")
+        if (ctx16 / "context" / "metrics" / LOCK).exists():
+            bad("main() left its lock behind")
+        hdr = [l for l in (pcout / "usage.tsv").read_text(encoding="utf8").splitlines() if l.startswith("# session")]
+        if hdr != ["# " + "\t".join(USAGE_COLUMNS)] or USAGE_COLUMNS[-1] != "effort":
+            bad(f"usage.tsv header must end with effort: {hdr}")
+    finally:
+        PROJECTS, sys.argv = orig_projects, orig_argv
+    ok("--out moves the TSVs, candidates stay shared, a held lock skips the run")
+
     print("selftest passed")
 
 
@@ -1189,13 +1259,58 @@ def load_rows(tsv):
     return rows, stale
 
 
+LOCK = ".session-audit.lock"
+STALE_S = 60  # a run takes seconds and the Stop hook times out at 30
+
+
+def take_lock(d, wait=25):
+    """One writer per shared metrics dir, Mac and PC alike: an O_EXCL create works on
+    macOS, Windows and SMB, where flock/fcntl do not. The file holds the owner's host and
+    its own clock time; over STALE_S old means the owner died, so take it over."""
+    p, end = d / LOCK, time.time() + wait
+    while True:
+        try:
+            fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f"{socket.gethostname()} {time.time()}".encode())
+            os.close(fd)
+            return p
+        except FileExistsError:
+            try:
+                born = float(p.read_text(encoding="utf8").split()[1])
+            except (OSError, ValueError, IndexError):
+                born = time.time()  # mid-write or just released: retry
+            if time.time() - born > STALE_S:
+                # ponytail: two takers of one stale lock can race; needs a dead owner plus
+                # two Stop hooks in the same 100 ms. Rename-then-create if it ever shows.
+                p.unlink(missing_ok=True)
+                continue
+        if time.time() >= end:
+            return None
+        time.sleep(0.1)
+
+
+def release_lock(p):
+    p.unlink(missing_ok=True)
+
+
+def write_atomic(path, text):
+    """Whole file or the old file: a reader never sees a truncated TSV."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def main():
     if "--selftest" in sys.argv:
         selftest()
         return 0
 
-    # sys.argv[i] is the word before sys.argv[1:][i]: the number after --days is not a path.
-    args = [a for i, a in enumerate(sys.argv[1:]) if not a.startswith("--") and sys.argv[i] != "--days"]
+    # sys.argv[i] is the word before sys.argv[1:][i]: the value after --days/--out is not a path.
+    args = [a for i, a in enumerate(sys.argv[1:])
+            if not a.startswith("--") and sys.argv[i] not in ("--days", "--out")]
     ctx = Path(args[0]) if args else Path.home() / "www" / "context"
     days = 0 if "--all" in sys.argv else 2
     if "--days" in sys.argv:
@@ -1210,16 +1325,32 @@ def main():
         print(f"session-audit: no transcripts at {PROJECTS}", file=sys.stderr)
         return 0
 
-    outdir = ctx / "context" / "metrics"
+    # The TSVs go to --out (the PC writes metrics/pc/); candidates and the lock stay in the
+    # shared metrics dir: one review queue, and one writer at a time across machines.
+    shared = ctx / "context" / "metrics"
+    outdir = Path(sys.argv[sys.argv.index("--out") + 1]) if "--out" in sys.argv else shared
+    shared.mkdir(parents=True, exist_ok=True)
+    lock = take_lock(shared)
+    if not lock:
+        print(f"session-audit: {shared / LOCK} held by another run; skipped, the next run catches up",
+              file=sys.stderr)
+        return 0
+    try:
+        return audit(outdir, shared / "candidates.md", days, to_stdout)
+    finally:
+        release_lock(lock)
+
+
+def audit(outdir, cand, days, to_stdout):
     tsv = outdir / "sessions.tsv"
-    cand = outdir / "candidates.md"
 
     rows, stale = load_rows(tsv)
     usage_tsv = outdir / "usage.tsv"
-    # Keyed (session, activity). Rows of pruned transcripts are kept: history is the point.
-    usage_rows = {tuple(l.split("\t")[:5:4]): l for l in
+    # Keyed (session, activity, effort); rows from before effort (2026-10-30) key on "".
+    # Rows of pruned transcripts are kept: history is the point.
+    usage_rows = {(f[0], f[4], f[9] if len(f) > 9 else ""): l for l in
                   (usage_tsv.read_text(encoding="utf8").splitlines() if usage_tsv.exists() else [])
-                  if l and not l.startswith("#")}
+                  if l and not l.startswith("#") for f in [l.split("\t")]}
     inputs_tsv = outdir / "inputs.tsv"
     # Keyed (session, source, kind); same rule: rows of pruned transcripts are kept.
     input_rows = {(f[0], f[4], f[5]): l for l in
@@ -1245,10 +1376,10 @@ def main():
         rows[m["session"]] = "\t".join(str(m[c]) for c in COLUMNS)
         for k in [k for k in usage_rows if k[0] in (m["session"], path.stem)]:
             del usage_rows[k]
-        for act, a in m["activity"].items():
-            usage_rows[(m["session"], act)] = "\t".join([
+        for (act, eff), a in m["activity"].items():
+            usage_rows[(m["session"], act, eff)] = "\t".join([
                 m["session"], m["date"], m["project"], m["agent"], act, f"{round(a['requests'], 2):g}",
-                str(round(a["output"])), str(round(a["thinking"])), f"{a['cost']:.6f}"])
+                str(round(a["output"])), str(round(a["thinking"])), f"{a['cost']:.6f}", eff])
         for k in [k for k in input_rows if k[0] in (m["session"], path.stem)]:
             del input_rows[k]
         for (src, kind), (tok, img) in m["inputs"].items():
@@ -1283,29 +1414,30 @@ def main():
         "# replaced in place as a session grows. No user text is read; interruptions are counted.\n"
         "# " + "\t".join(COLUMNS) + "\n"
     )
-    tsv.write_text(header + "\n".join(rows[k] for k in sorted(rows)) + "\n", encoding="utf8")
-    usage_tsv.write_text(
+    write_atomic(tsv, header + "\n".join(rows[k] for k in sorted(rows)) + "\n")
+    write_atomic(usage_tsv,
         "# Output tokens and dollars by activity — derived, never authored\n"
-        "# Written by session-audit.py. One row per (session, activity); a request whose tool calls\n"
+        "# Written by session-audit.py. One row per (session, activity, effort); a request whose tool calls\n"
         "# span several activities is split evenly between them, so requests can be fractional.\n"
         f"# cost_usd = the whole request (input, cache, output) at PRICES as of {PRICES_AS_OF}.\n"
+        "# effort = the request's effort level; empty for headless runs and rows from before 2026-10-30.\n"
         "# " + "\t".join(USAGE_COLUMNS) + "\n"
-        + "".join(usage_rows[k] + "\n" for k in sorted(usage_rows)), encoding="utf8")
-    inputs_tsv.write_text(
+        + "".join(usage_rows[k] + "\n" for k in sorted(usage_rows)))
+    write_atomic(inputs_tsv,
         "# New input tokens (cache write + uncached) by source — derived, never authored\n"
         "# Written by session-audit.py. source = activity whose tool result or own output was re-sent,\n"
         "# or session start / cache rebuild / prompt / harness. Visible parts are char/4 estimates\n"
         "# scaled to the bill; the remainder is harness/not in transcript. Carry (cache read) is in sessions.tsv.\n"
         "# harness/attachment is the legacy lump of sessions scanned before attachments were named (pre-split history).\n"
         "# " + "\t".join(INPUT_COLUMNS) + "\n"
-        + "".join(input_rows[k] + "\n" for k in sorted(input_rows)), encoding="utf8")
-    hooks_tsv.write_text(
+        + "".join(input_rows[k] + "\n" for k in sorted(input_rows)))
+    write_atomic(hooks_tsv,
         "# Hook runs, errors and time by session — derived, never authored\n"
         "# Written by session-audit.py. One row per (session, event, hook); hook = script basename or hookName,\n"
         "# never the command, output or stderr. Silent hooks leave no transcript record and are absent.\n"
         "# Stop: runs from stop_hook_summary only; hook * = the summary's hookErrors; duration empty.\n"
         "# " + "\t".join(HOOK_COLUMNS) + "\n"
-        + "".join(hook_rows[k] + "\n" for k in sorted(hook_rows)), encoding="utf8")
+        + "".join(hook_rows[k] + "\n" for k in sorted(hook_rows)))
 
     if new_cands:
         if not cand.exists():
@@ -1324,7 +1456,7 @@ def main():
         text = cand.read_text(encoding="utf8")
         if HEADING not in text:
             text += "\n" + HEADING + "\n\n"
-        cand.write_text(text.rstrip("\n") + "\n" + "\n".join(new_cands) + "\n", encoding="utf8")
+        write_atomic(cand, text.rstrip("\n") + "\n" + "\n".join(new_cands) + "\n")
 
     if unpriced - {""}:
         print(f"session-audit: no price for {', '.join(sorted(unpriced - {''}))} — booked at $0; "
