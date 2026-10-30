@@ -1,0 +1,10 @@
+  receiver:
+    build: ./receiver
+    restart: unless-stopped
+    ports:
+      - "${RECEIVER_BIND:-0.0.0.0}:${RECEIVER_PORT:-4318}:4318"
+    volumes:
+      - ${DB_DIR}:/data/db
+    environment:
+      OBSERVATORY_KEY: ${OBSERVATORY_KEY}
+      DB_PATH: /data/db/otel.db
