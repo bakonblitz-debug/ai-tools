@@ -22,6 +22,7 @@ Usage:
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -89,12 +90,13 @@ def auto_plan(cwd):
     if not cwd:
         return None
     sh = Path(__file__).with_name("handoff.sh")
+    # Bare "bash" on Windows resolves to System32's WSL launcher before PATH; take PATH's (Git Bash).
     try:
-        out = subprocess.run(["bash", str(sh), "--auto-path", cwd],
+        out = subprocess.run([shutil.which("bash") or "bash", str(sh), "--auto-path", cwd],
                              capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return None
-    return Path(out) if out else None
+    return Path(out) if out and "\0" not in out else None
 
 
 def selftest():
@@ -159,6 +161,7 @@ def selftest():
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows pipes default to cp1252, which has no ⚠
     if "--selftest" in sys.argv:
         selftest()
         return 0
