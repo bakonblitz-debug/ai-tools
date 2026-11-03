@@ -13,6 +13,9 @@ export type Qs = {
 };
 export type RawQ = Record<string, string | string[] | undefined>;
 
+/** Dashboard zone: TZ env, else the host zone. */
+export const tz = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 const DAY = 86400000;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));

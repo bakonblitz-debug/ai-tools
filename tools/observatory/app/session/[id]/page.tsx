@@ -2,6 +2,7 @@ import { ensureFresh, openDb } from '../../../src/loader';
 import type { SessionRow, UsageRow } from '../../../src/metrics';
 import { loadSessionEvents, openOtel, waterfall } from '../../../src/otel';
 import { METRICS_DIR } from '../../data';
+import { tz } from '../../../src/query';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     cells.set(k, c);
   }
   const otel = openOtel();
-  const wf = otel ? waterfall(loadSessionEvents(otel, id, process.env.TZ)) : null;
+  const wf = otel ? waterfall(loadSessionEvents(otel, id, tz())) : null;
   otel?.close();
   const maxDur = Math.max(1, ...(wf?.rows.map((r) => r.duration_ms ?? 0) ?? []));
 

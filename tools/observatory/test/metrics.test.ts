@@ -1,4 +1,6 @@
 import { expect, it } from 'vitest';
+import { chartOf, tips } from '../src/chart';
+import { FORMULAS, PANELS } from '../src/formulas';
 import { computeTiles, type Filters, type SessionRow, type UsageRow } from '../src/metrics';
 
 let n = 0;
@@ -97,4 +99,60 @@ it('agent filter: interactive (default intent) = interactive + subagent; headles
   const uu = [u({ agent: 'main' }), u({ agent: 'subagent:Explore' }), u({ agent: 'headless' }), u({ agent: 'hook:x', effort: 'low' })];
   expect(tile('effort', [], uu, { ...f, agent: 'headless' }).effort).toHaveProperty('low');
   expect(tile('effort', [], uu, { ...f, agent: 'interactive' }).effort).not.toHaveProperty('low');
+});
+
+it('every tile and panel explains itself and has a MathML formula', () => {
+  for (const t of computeTiles([], [], f, null)) {
+    expect(t.explanation && t.reading && t.source, t.id).toBeTruthy();
+    expect(FORMULAS[t.id], t.id).toMatch(/^<math[ >]/);
+  }
+  expect(Object.keys(PANELS).sort()).toEqual(['apiErrors', 'coverage', 'heatmap', 'hooks', 'overlays', 'toolDecisions']);
+  for (const [id, p] of Object.entries(PANELS)) {
+    expect(p.explanation && p.reading && p.source, id).toBeTruthy();
+    expect(FORMULAS[id], id).toMatch(/^<math[ >]/);
+  }
+});
+// f.today = 2026-10-10: headline week 10-04..10-10, previous week 09-27..10-03
+it('prev: same formula on the 7 days before the headline week', () => {
+  const ss = [s({ date: '2026-09-27' }), s({ date: '2026-10-01' }), s({ date: '2026-10-08' })];
+  expect(tile('sessions', ss).prev).toBeCloseTo(2 / 7);
+  expect(tile('models', ss).prev).toBeNull();
+  expect(tile('effort', ss).prev).toBeNull();
+});
+it('prev is null when data starts inside the previous week', () => {
+  expect(tile('sessions', [s({ date: '2026-09-30' }), s({ date: '2026-10-08' })]).prev).toBeNull();
+});
+it('ratio prev pools the previous week and needs 5 sessions', () => {
+  const start = s({ date: '2026-09-27', assistant_msgs: 0 }); // marks the data start, no denominator
+  const wk = (k: number) => Array.from({ length: k }, () => s({ date: '2026-09-28', assistant_msgs: 10, tool_errors: 1 }));
+  expect(tile('toolErrors', [start, ...wk(5)]).prev).toBeCloseTo(10);
+  expect(tile('toolErrors', [start, ...wk(3)]).prev).toBeNull();
+});
+it('effort tile carries the request count per day', () => {
+  const t = tile('effort', [], [u({ requests: 3 }), u({ requests: 1, effort: '' })]);
+  expect(t.effortRequests![t.dates.indexOf('2026-10-08')]).toBe(4);
+});
+
+it('chartOf feeds tips for effort, ratio and plain tiles', () => {
+  const i = tile('effort', [], [u({ requests: 3 })]).dates.indexOf('2026-10-08');
+  expect(tips(chartOf(tile('effort', [], [u({ requests: 3 })])), [])[i]).toContain('requests: 3');
+  expect(tips(chartOf(tile('toolErrors', [])), [])[i]![1]).toContain('fewer than 5 sessions');
+  expect(chartOf(tile('sessions', [])).lines.map((l) => l.label)).toEqual(['Sessions per day']);
+});
+
+it('formulas are well-formed MathML: balanced tags, mfrac has exactly two children', () => {
+  for (const [id, xml] of Object.entries(FORMULAS)) {
+    const stack: { name: string; kids: number }[] = [];
+    for (const [, close, name] of xml.matchAll(/<(\/?)([a-z]+)[^>]*>/g)) {
+      if (close) {
+        const top = stack.pop();
+        expect(top?.name, id).toBe(name);
+        if (name === 'mfrac') expect(top!.kids, `${id} mfrac children`).toBe(2);
+      } else {
+        if (stack.length) stack[stack.length - 1]!.kids++;
+        stack.push({ name: name!, kids: 0 });
+      }
+    }
+    expect(stack, id).toHaveLength(0);
+  }
 });
