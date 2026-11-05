@@ -41,7 +41,7 @@ If a trajectory exists for this type of task, read it. Do not start from scratch
 when prior work exists.
 
 **0b. Check for an existing plan.**
-Run: `ls <workspace>/.plans/ | grep <slug>` — if a plan file exists for this task,
+Look for `<workspace>/.plans/*<slug>*` with the Glob tool — if a plan file exists for this task,
 read it before doing anything else. Resume from where work left off.
 
 **0c. Read AGENTS.md.**

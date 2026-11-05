@@ -36,6 +36,11 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "scripts"))
+from skilllog import logger  # noqa: E402
+
+log = logger("bacon:context-query")
+
 # <slug>-<epoch>-<YYYYMMDD>.<ext> — slugs contain hyphens, so anchor on the
 # two numeric groups at the end rather than splitting the whole name.
 LEAF = re.compile(r"^(?P<slug>.+)-(?P<epoch>\d{9,10})-(?P<ymd>\d{8})\.(?P<ext>md|pdf)$")
@@ -48,7 +53,7 @@ _MONTHS = {m.lower(): i for i, m in enumerate(
 def default_root() -> Path:
     if os.environ.get("CONTEXT_ROOT"):
         return Path(os.environ["CONTEXT_ROOT"])
-    for c in ("/mnt/www/context/context", "~/www/context/context"):
+    for c in ("/mnt/www/context/context", "~/www/context/context", "M:/context/context"):
         p = Path(c).expanduser()
         if p.is_dir():
             return p
@@ -166,7 +171,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         parents=[common], description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--self-check", action="store_true")
+    ap.add_argument("--self-check", "--selftest", dest="self_check", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
 
     p_latest = sub.add_parser("latest", parents=[common],
@@ -205,8 +210,10 @@ def main() -> None:
         needle = args.term.lower()
         rows = [r for r in rows if needle in r[2].name.lower()]
 
+    log("result", cmd=args.cmd, root=str(root), under=getattr(args, "under", None), rows=len(rows))
     show(rows, root)
 
 
 if __name__ == "__main__":
-    main()
+    with log.run(sys.argv[1:]):
+        main()

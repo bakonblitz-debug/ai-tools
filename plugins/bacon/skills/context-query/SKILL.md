@@ -1,7 +1,7 @@
 ---
 name: context-query
 description: >
-  Latest, newest, most recent, last N, since <date>, what's new, recent notes: context files by date. Dates live in the FILENAME (<slug>-<epoch>-<YYYYMMDD>.md); sort names, never grep file bodies for a date.
+  "latest", "newest", "most recent", "last N", "since <date>", "what's new", "recent notes". Lists context files by the date in their FILENAME (<slug>-<epoch>-<YYYYMMDD>.md); never grep file bodies for a date.
 ---
 
 # Querying the context tree by date
@@ -32,13 +32,14 @@ act on it.
 `context-query.py` sits next to this file. It handles the sorting and the date
 parsing so you do not have to compose a shell pipeline.
 
+Run it through the interpreter picker, which works on the Mac, the PC and WSL:
+
 ```bash
-python3 context-query.py latest 5 --under <subfolder>
-python3 context-query.py since 2026-08-23 --under <subfolder>
-python3 context-query.py since "Aug 23 2026"
-python3 context-query.py find <name-fragment>
-python3 context-query.py --self-check
+bash "<this skill's base directory>/../../../../scripts/py.sh" "<this skill's base directory>/context-query.py" latest 5 --under <subfolder>
 ```
+
+The other forms, same prefix: `since 2026-08-23 --under <subfolder>`, `since "Aug 23 2026"`,
+`find <name-fragment>`, `--selftest`.
 
 `since` accepts `2026-08-23`, `20260823`, `23-08-2026`, `08/23/2026`,
 `2026/08/23`, `23 Aug 2026`, `August 23, 2026`, or a raw epoch — normalising the
@@ -52,22 +53,10 @@ Default root is `$CONTEXT_ROOT`, else `<workspace>/context/context`, where
 
 ## Do not rebuild this by hand
 
-The equivalent pipeline is easy to get subtly wrong:
-
-```bash
-# WRONG - splits on "-" and takes field 2, which is part of the slug
-ls -1 *.md | sort -t- -k2 -rn | head -5
-```
-
-Most slugs contain hyphens, so field 2 is a word from the slug rather than the
-epoch, and the result is a plausible-looking list in the wrong order. If you
-must do it inline, anchor on the two numeric groups at the end:
-
-```bash
-ls -1 *.md | sed -E 's/^.*-([0-9]{9,10})-([0-9]{8})\.md$/\1 \2 &/' | sort -rn | head -5
-```
-
-Prefer the script.
+Never sort these names with a shell pipeline (`ls`, `sort`, `sed`). Most slugs
+contain hyphens, so splitting on `-` sorts by a word from the slug, and the
+result is a plausible-looking list in the wrong order. The script anchors on the
+two numeric groups at the end; its docstring shows the broken pipeline.
 
 ## After you have the filenames
 

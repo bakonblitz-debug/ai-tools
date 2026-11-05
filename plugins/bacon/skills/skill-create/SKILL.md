@@ -37,9 +37,26 @@ description: >
 
 - The description is quoted triggers first, then one sentence. The list shows that sentence, so it
   must stand alone.
-- The body is numbered steps. A command that runs more than once goes in a script in the plugin's
-  `scripts/` (one entry script per plugin, like claude-config's `cc.sh`), called as
-  `"<this skill's base directory>/../../scripts/<script>"`. Scripts get a `--selftest` or a test.
+- **Python, wherever the skill does work.** Anything deterministic (parsing, sorting, dates, paths,
+  file edits, checks, more than one command in a row) goes in a Python script, not in the skill text:
+  it is precise, tested, and costs fewer tokens than having the model compose it each time. The skill
+  text says when to run the script and how to read its output. Enforced by `skill.py lint`: skill code
+  must be `.py` (only `py.sh`, the interpreter picker, is shell), and a SKILL.md may not hold a pipe,
+  a command substitution or a loop.
+- **Every skill script** sits in the skill folder or the plugin's `scripts/`, is Python 3.9 stdlib, has
+  a `--selftest`, and logs through skilllog:
+  ```python
+  sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "scripts"))  # ai-tools/scripts
+  from skilllog import logger
+  log = logger("<plugin>:<name>")
+  ...
+  with log.run(sys.argv[1:]):
+      main()
+  ```
+  `log("event", key=value)` at the points worth seeing later; it costs nothing while logging is off.
+  He reads them with `/bacon:skill log on <name>` then `/bacon:skill log tail <name>`.
+- The skill calls it through the picker, never a named interpreter:
+  `bash "<path to ai-tools>/scripts/py.sh" "<this skill's base directory>/<script>.py" <args>`.
 - Read-only unless the task needs a write; a step that changes state outside the repo says so, and a
   step that cannot be undone asks first.
 
@@ -52,6 +69,8 @@ description: >
 ## 5. Test, commit, report
 
 - Run any script's selftest on both machines (the Mac has Python 3.9).
+- `skill.py lint` must pass (`/bacon:skill lint`); the ai-tools pre-commit hook blocks the commit
+  otherwise, and health-check fails until it does.
 - Commit in the worktree (subject = the feature; body = list of changes; no attribution line), then
   fast-forward `main` on the Mac. Never push ai-tools (public); claude-config pushes through its own
   sync.

@@ -6,8 +6,8 @@ description: >
 
 # bacon: list
 
-Run from the Bash tool (`python3` on the Mac, `py -3` on the PC):
+Run from the Bash tool:
 
-`python3 "<this skill's base directory>/../../../../scripts/list-skills.py" "<this skill's base directory>/../.."`
+`bash "<this skill's base directory>/../../../../scripts/py.sh" "<this skill's base directory>/../../../../scripts/list-skills.py" "<this skill's base directory>/../.."`
 
 Print the table it returns as it is, then stop. For every plugin at once: `/bacon:skill list`.

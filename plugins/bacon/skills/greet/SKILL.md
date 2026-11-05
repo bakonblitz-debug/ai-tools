@@ -1,7 +1,7 @@
 ---
 name: greet
 description: >
-  Greet me, what's open, what should we work on, start of session. Session opener: offers what is open today as picker options, top items first. Run as the first prompt (`claude "/bacon:greet"`).
+  "greet me", "what's open", "what should we work on", "start of session". Session opener: offers what is open today as picker options, top items first. Run as the first prompt (`claude "/bacon:greet"`).
 ---
 
 # Greet
@@ -43,7 +43,7 @@ As soon as the answer comes back, name the session after it, so /resume shows th
 "/bacon:greet". Write a title of 2–6 words: the option label for a picked item ("PC boot crashes"), or the
 subject of what was typed for Other (not the raw text). Then run, from the Bash tool:
 
-`bash "<this skill's base directory>/set-title.sh" "<title>"`
+`bash "<this skill's base directory>/../../../../scripts/py.sh" "<this skill's base directory>/set_title.py" "<title>"`
 
 "Show the full list" names nothing yet: name the session once he picks something from the list. If the
 script fails, say so in one line and go on; the work matters more than the title.

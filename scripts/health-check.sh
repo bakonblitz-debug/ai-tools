@@ -135,7 +135,9 @@ check_harness_map_covers_files() {
 check_script_selftests() {
   n=0; bad=""; skip=""
   # Plugin hook scripts (plugins/*/hooks/*.sh) count too: they run in every session of a project.
-  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py "$SCRIPTS"/../plugins/*/hooks/*.sh 2>/dev/null | LC_ALL=C sort); do
+  # Skill scripts (plugins/*/skills/*/*.py, plugins/*/scripts/*.py) count too: skill.py lint requires their --selftest.
+  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py "$SCRIPTS"/../plugins/*/hooks/*.sh \
+      "$SCRIPTS"/../plugins/*/skills/*/*.py "$SCRIPTS"/../plugins/*/scripts/*.py 2>/dev/null | LC_ALL=C sort); do
     n=$((n + 1))
     case $f in *.py) run=python3 ;; *) run=bash ;; esac
     command -v "$run" >/dev/null 2>&1 || { skip="$skip ${f##*/}"; continue; }
@@ -148,6 +150,15 @@ check_script_selftests() {
   [ "$n" -gt 0 ] || { echo "found no script with a --selftest"; return 1; }
   [ -z "$bad" ] || { echo "selftest failed:$bad"; return 1; }
   echo "$n scripts${skip:+, no interpreter so skipped$skip}"
+}
+
+# The skill rules (skill code is Python with a --selftest and skilllog, every plugin has a `list`,
+# no shell logic written into a SKILL.md), for ai-tools' plugins and claude-config's. The same
+# lint blocks a commit through .githooks/pre-commit; this catches a clone without the hook.
+check_skill_lint() {
+  out=$(bash "$SCRIPTS/py.sh" "$SCRIPTS/skill.py" lint 2>&1); rc=$?
+  [ "$rc" -eq 0 ] || { echo "$out" | grep '^fail' | head -3 | cut -c1-160 | tr '\n' ' '; return 1; }
+  echo "$out" | tail -1
 }
 
 # The derived-value check. The count changes as work is done, so asserting a number

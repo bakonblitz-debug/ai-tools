@@ -1,24 +1,27 @@
 ---
 name: skill
 description: >
-  "skill list", "list all skills", "what commands do I have", "every plugin's commands". Manages skills across every plugin; `list` prints all installed plugins' skills, on or off here.
-argument-hint: list
+  "skill list", "list all skills", "skill log", "skill tail", "skill lint", "what commands do I have". Lists every plugin's skills, turns skill run logs on or off and shows them, and checks the skill rules.
+argument-hint: list | log [on|off|tail] [name] | lint
 ---
 
 # bacon: skill
 
-The first word of the arguments is the subcommand.
+Every subcommand runs one script, from the Bash tool:
 
-## list (also the default when no argument is given)
+`bash "<this skill's base directory>/../../../../scripts/py.sh" "<this skill's base directory>/../../../../scripts/skill.py" <arguments>`
 
-Run from the Bash tool (`python3` on the Mac, `py -3` on the PC):
+Pass his arguments through as they are; no argument means `list`. Print what the script returns, then
+stop. Do not rebuild any of it by hand.
 
-`python3 "<this skill's base directory>/../../../../scripts/list-skills.py" --all`
+| He types | It does |
+|---|---|
+| `list` | Every installed plugin's skills, one table per plugin, plugins that are on first. "off here" = installed but not enabled in this folder. |
+| `log` | Whether logging is on, and the log files on this machine. |
+| `log on [name ...]` | Turns run logs on (no name = every skill). Names as typed: `bacon:greet` or `greet`. |
+| `log off [name ...]` | Turns them off (no name = all). |
+| `log tail <name> [N]` | The last N lines (default 40) of one skill's log. Read them and say in a line or two what the skill did, or where it failed. |
+| `lint` | Checks the skill rules over every plugin; exits 1 on a failure. Report the `fail` lines first, each with its fix. |
 
-Print what it returns as it is: one table per plugin, plugins that are on first. "off here" means
-installed but not enabled in this folder (bacon-dev turns on in coding-mode folders). Then stop.
-
-## Anything else
-
-Say which subcommands exist (`list`), and that a new skill is made with `/bacon:skill-create
-"<what it should do>"`.
+Logs stay on each machine in `~/.claude/skill-logs/`. A skill's script logs only while logging is on.
+A new skill is made with `/bacon:skill-create "<what it should do>"`.
