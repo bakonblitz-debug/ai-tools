@@ -64,16 +64,10 @@ tiered-model pipeline sized for his actual hardware and workflow.
 
 ## Layout
 
-Standard Claude Code marketplace shape: the plugin under `plugins/`, everything else beside it.
+No plugin lives here. Every plugin is cloned under `<workspace>/projects/plugins/`: dev-loop and skill-kit (public, their own marketplaces) and bacon (private, in the `harness` marketplace there). Their skills call the scripts here by path.
 
 ```
 <workspace>/ai-tools/
-├── .claude-plugin/marketplace.json   — the `ai-tools` marketplace; lists two plugins
-├── plugins/bacon/                    — the plugin (skills are invoked as bacon:*)
-│   ├── .claude-plugin/plugin.json
-│   └── skills/                       — second-brain, context-query, ai-tools-context, greet, list
-│   (dev-loop: architect, ouroboros, handoff, git-conflict; skill-kit: skills, create —
-│    public plugins in their own repos, cloned under <workspace>/projects/plugins/)
 ├── scripts/                          — hooks and tools: claude-bootstrap.sh, session-todo.sh,
 │                                       health-check.sh, install.py, sync-memory.sh, …
 ├── bin/now                           — on PATH via ~/.zshenv

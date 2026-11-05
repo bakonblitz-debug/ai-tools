@@ -44,8 +44,6 @@ Then add the plugins inside a Claude Code session. Each public plugin is its own
 /plugin install dev-loop@dev-loop
 /plugin marketplace add bakonblitz-debug/skill-kit
 /plugin install skill-kit@skill-kit
-/plugin marketplace add bakonblitz-debug/ai-tools     # the personal bacon plugin, optional
-/plugin install bacon@ai-tools
 ```
 
 **What you can skip.** Most hooks want a *context repo*: a private git repo of accumulated project notes. If you have none, the installer skips that group; you lose the session digest and the auto-committed memory, not the skills, standards or runbooks. The setup this was built on (two machines sharing one tree over SMB, a local model runner, a macOS launchd job) is optional too: anything you do not have reports SKIP in the health check, not FAIL.
@@ -58,19 +56,10 @@ Then add the plugins inside a Claude Code session. Each public plugin is its own
 |---|---|---|---|
 | `dev-loop` | [dev-loop](https://github.com/bakonblitz-debug/dev-loop) (public) | Coding mode: the plan → prove → build pipeline, tangent hand-offs, merge-conflict resolution | `/dev-loop:list` |
 | `skill-kit` | [skill-kit](https://github.com/bakonblitz-debug/skill-kit) (public) | Listing, logging, linting and creating skills | `/skill-kit:list` |
-| `bacon` | this repo, `plugins/bacon` | Personal toolkit for this workspace: session opener, context-tree lookups, deep engineering mode | `/bacon:list` |
 
 `/skill-kit:skills list` shows every installed plugin's skills at once, with whether each plugin is on here. The listings are generated from the skill files by `list-skills.py`, so no list is kept by hand. The dev-loop and skill-kit READMEs list their commands.
 
-**bacon**
-
-| Command | What it does |
-|---|---|
-| `/bacon:greet` | Session opener: offers what is open today as a picker. Run it as the first prompt (`claude "/bacon:greet"`). |
-| `/bacon:second-brain` | Deep engineering mode: orient in code and memory, plan, build test-first, record decisions. |
-| `/bacon:context-query` | Lists context files by the date in their file name ("latest", "since <date>"). |
-| `/bacon:ai-tools-context` | Loads or updates the context tree paired with this repo, for installs without the bootstrap hook. |
-| `/bacon:list` | This table, generated. |
+This repo holds no plugin of its own. The author's personal plugin (`bacon`: session opener, context-tree lookups) is a private repo, because it only works with one workspace; it calls the scripts here by path.
 
 **Coding mode.** `dev-loop` is off in user settings and switched on per project: `bash scripts/coding-mode.sh <project dir>` enables it (with the other coding plugins) in that folder's `.claude/settings.json`; `--check` reports what is missing without touching anything. Its `SessionStart` hook prints the file named by `CODING_RULES_FILE` (here: the workspace's coding rules).
 
@@ -131,8 +120,6 @@ The full file index is the **harness map**: [`docs/harness-map.md`](docs/harness
 
 ```
 ai-tools/
-├── .claude-plugin/        # marketplace.json: the bacon plugin
-├── plugins/bacon/         # skills invoked as /bacon:*
 ├── scripts/               # hooks and tools: install.py, health-check.sh, skill.py,
 │                          #   list-skills.py, skilllog.py, py.sh, commit-guard.py, session-todo.sh, …
 ├── .githooks/pre-commit   # the skill lint and commit-guard before every commit

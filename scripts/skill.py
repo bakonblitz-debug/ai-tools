@@ -274,7 +274,8 @@ def selftest():
     (third / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "tp", "source": "./"}]}))
     (third / "skills" / "list").mkdir(parents=True)
     twin = t / "twin"  # another checkout of a plugin this checkout already provides
-    own = ls.rows(plugin_dirs(claude=t / "no-claude")[0])[0]
+    mine = plugin_dirs(claude=t / "no-claude")
+    own = ls.rows(mine[0])[0] if mine else "no-plugin-here"  # a checkout may hold no plugin of its own
     (twin / ".claude-plugin").mkdir(parents=True)
     (twin / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": own, "source": "./"}]}))
     (twin / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": own}))
@@ -292,7 +293,8 @@ def selftest():
         "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], own + "@tw": [{}], "vp@hv": [{}]}}))
     (c / "settings.json").write_text("{}")
     dirs = [d.resolve() for d in plugin_dirs(claude=c)]
-    check(m.resolve() in dirs and not {cached.resolve(), third.resolve(), twin.resolve(), vp.resolve()} & set(dirs),
+    skipped = {cached.resolve(), third.resolve(), vp.resolve()} | ({twin.resolve()} if mine else set())
+    check(m.resolve() in dirs and not skipped & set(dirs),
           f"a local-clone plugin is linted; cached, third-party marketplace, vendor/ and duplicate-name ones are not: {dirs}")
 
     d = t / "logs"

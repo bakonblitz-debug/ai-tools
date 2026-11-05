@@ -3,7 +3,9 @@
 # or that carries share damage: a script that lost its exec bit, or CRLF (scripts/commit-guard.py).
 # On per clone, once: git config core.hooksPath .githooks
 root=$(git rev-parse --show-toplevel)
-if ! bash "$root/scripts/py.sh" "$root/scripts/skill.py" lint "$root"/plugins/*/; then
+# No plugin lives here since bacon moved out (2026-11-05); the lint runs only if one comes back.
+plugins=$(ls -d "$root"/plugins/*/ 2>/dev/null)
+if [ -n "$plugins" ] && ! bash "$root/scripts/py.sh" "$root/scripts/skill.py" lint $plugins; then
   echo "pre-commit: the skill lint failed (above). Fix it; skip with --no-verify only when he says so." >&2
   exit 1
 fi

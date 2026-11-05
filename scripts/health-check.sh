@@ -90,14 +90,14 @@ check_remote_reachable() {
 # tracked file is a leak, not untidiness. The 2026-09-29 tool/notebook split swept 27
 # files by hand and MISSED one, because the sweep pattern matched paths and emails but
 # not a bare first name. A hand sweep that has to be repeated is not a check; this is.
-# Allowlist, settled 2026-09-29: LICENSE and the plugin manifests carry author metadata
-# on purpose, .env.example documents the keys, and results.jsonl is recorded measurement
+# Allowlist, settled 2026-09-29: LICENSE carries author metadata on purpose (the plugin
+# manifests that did too left with bacon on 2026-11-05), .env.example documents the keys, and results.jsonl is recorded measurement
 # data — rewriting it to look tidy would falsify a result.
 check_no_personal_identifiers() {
   REPO=$(cd "$SCRIPTS/.." && pwd)
   command -v git >/dev/null 2>&1 || { echo "git not available"; return 77; }
   git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repo"; return 77; }
-  allow='^(LICENSE|\.claude-plugin/marketplace\.json|plugins/bacon/\.claude-plugin/plugin\.json|\.env\.example)$'
+  allow='^(LICENSE|\.env\.example)$'
   hits=$(git -C "$REPO" ls-files \
     | grep -vE "$allow" \
     | while read -r f; do
@@ -136,10 +136,12 @@ check_harness_map_covers_files() {
 # (context-check-monthly.sh mentions it and is a real job that writes files).
 check_script_selftests() {
   n=0; bad=""; skip=""
-  # Plugin hook scripts (plugins/*/hooks/*.sh) count too: they run in every session of a project.
-  # Skill scripts (plugins/*/skills/*/*.py, plugins/*/scripts/*.py) count too: skill.py lint requires their --selftest.
-  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py "$SCRIPTS"/../plugins/*/hooks/*.sh \
-      "$SCRIPTS"/../plugins/*/skills/*/*.py "$SCRIPTS"/../plugins/*/scripts/*.py 2>/dev/null | LC_ALL=C sort); do
+  # The plugins under <workspace>/projects/plugins count too (bacon, dev-loop, skill-kit):
+  # hook scripts (*/hooks/*.sh) run in every session of a project, and skill scripts
+  # (*/skills/*/*.py, */scripts/*.py) must have a --selftest for skill.py lint.
+  local pl="$WWW/projects/plugins"
+  for f in $(grep -l -E -- '--selftest\)|"--selftest"' "$SCRIPTS"/*.sh "$SCRIPTS"/*.py "$pl"/*/hooks/*.sh \
+      "$pl"/*/skills/*/*.py "$pl"/*/scripts/*.py 2>/dev/null | LC_ALL=C sort); do
     n=$((n + 1))
     case $f in *.py) run=python3 ;; *) run=bash ;; esac
     command -v "$run" >/dev/null 2>&1 || { skip="$skip ${f##*/}"; continue; }
@@ -523,10 +525,10 @@ b
   printf 'import sys\nsys.exit(0 if "--selftest" in sys.argv else 2)\n' > "$SCRIPTS/green.py"
   ctx_expect 0 check_script_selftests
   # plugin hook scripts are found too (a plugin hook script lives outside scripts/)
-  mkdir -p "$t/plugins/p/hooks"; printf 'case $1 in --selftest) exit 1 ;; esac
-' > "$t/plugins/p/hooks/red.sh"
+  mkdir -p "$t/projects/plugins/p/hooks"; printf 'case $1 in --selftest) exit 1 ;; esac
+' > "$t/projects/plugins/p/hooks/red.sh"
   ctx_expect 1 check_script_selftests
-  rm "$t/plugins/p/hooks/red.sh"
+  rm "$t/projects/plugins/p/hooks/red.sh"
   printf 'case $1 in --selftest) sleep 30 ;; esac\n' > "$SCRIPTS/hang.sh"
   out=$(SELFTEST_LIMIT=1 check_script_selftests)
   case $out in *"hang.sh (timed out)"*) ;; *) echo "  FAIL: a hung selftest gave: $out"; ST_FAIL=1 ;; esac
