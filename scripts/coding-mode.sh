@@ -9,9 +9,10 @@
 # docs/coding-standards.md: dev-loop (architect/ouroboros/handoff + the coding-rules hook),
 # ponytail, superpowers. User settings keep them off, so only folders that opt in load them.
 set -u
-CODING_SET="dev-loop@dev-loop ponytail@ponytail superpowers@claude-plugins-official"
+CODING_SET="dev-loop@dev-loop ponytail@harness superpowers@claude-plugins-official"
 # Plugins that left the set: --check fails while a folder still lists one, a write removes it.
-RETIRED="bacon-dev@ai-tools"
+# ponytail@ponytail: ponytail moved to the harness marketplace (projects/plugins/vendor) 2026-11-05.
+RETIRED="bacon-dev@ai-tools ponytail@ponytail"
 
 # The interpreter is probed by running it (the PC's python3 is a Store stub that exists and fails).
 PY=""
@@ -54,24 +55,24 @@ selftest() {
   s=$t/p/.claude/settings.json; mkdir -p "$t/p/.claude"
   out=$(me "$t/p" --check); rc=$?
   ck "check on a folder with no settings.json fails" "$rc" 1
-  case $out in *dev-loop@dev-loop*ponytail@ponytail*superpowers@claude-plugins-official*) ;; *) ck "check lists all three missing ids" "$out" "all three" ;; esac
+  case $out in *dev-loop@dev-loop*ponytail@harness*superpowers@claude-plugins-official*) ;; *) ck "check lists all three missing ids" "$out" "all three" ;; esac
   [ -e "$s" ] && ck "check must not create the file" "created" "absent"
   me "$t/p" >/dev/null; rc=$?
   ck "write on a fresh folder succeeds" "$rc" 0
   me "$t/p" --check >/dev/null; ck "check passes after a write" "$?" 0
-  printf '{"model":"x","enabledPlugins":{"other@m":true,"ponytail@ponytail":false},"hooks":{"a":1}}\n' > "$s"
+  printf '{"model":"x","enabledPlugins":{"other@m":true,"ponytail@harness":false},"hooks":{"a":1}}\n' > "$s"
   me "$t/p" --check >/dev/null; ck "a false value counts as missing" "$?" 1
   me "$t/p" >/dev/null
-  out=$("$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["model"],d["hooks"]["a"],d["enabledPlugins"]["other@m"],d["enabledPlugins"]["ponytail@ponytail"],len(d["enabledPlugins"]))' "$s")
+  out=$("$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["model"],d["hooks"]["a"],d["enabledPlugins"]["other@m"],d["enabledPlugins"]["ponytail@harness"],len(d["enabledPlugins"]))' "$s")
   ck "merge keeps other keys and flips the false one" "$out" "x 1 True True 4"
   cp "$s" "$t/before"; me "$t/p" >/dev/null; cmp -s "$s" "$t/before"; ck "second run is a no-op (idempotent)" "$?" 0
   echo '{bad' > "$s"; me "$t/p" >/dev/null; ck "unreadable settings.json: exit 2, file untouched" "$?:$(cat "$s")" "2:{bad"
   printf '{"enabledPlugins":{"dev-loop@dev-loop":true,"ponytail@ponytail":true,"superpowers@claude-plugins-official":true,"bacon-dev@ai-tools":true}}\n' > "$s"
   out=$(me "$t/p" --check); rc=$?
-  case $rc:$out in 1:*retired:bacon-dev@ai-tools*) ;; *) ck "a retired plugin still listed fails the check, named" "$rc:$out" "1:…retired:bacon-dev@ai-tools" ;; esac
+  case $rc:$out in 1:*retired:bacon-dev@ai-tools*retired:ponytail@ponytail*|1:*retired:ponytail@ponytail*retired:bacon-dev@ai-tools*) ;; *) ck "retired plugins still listed fail the check, named" "$rc:$out" "1:…retired:bacon-dev@ai-tools retired:ponytail@ponytail" ;; esac
   me "$t/p" >/dev/null
   out=$("$PY" -c 'import json,sys;print(sorted(json.load(open(sys.argv[1]))["enabledPlugins"]))' "$s")
-  ck "a write removes the retired plugin" "$out" "['dev-loop@dev-loop', 'ponytail@ponytail', 'superpowers@claude-plugins-official']"
+  ck "a write removes the retired plugins" "$out" "['dev-loop@dev-loop', 'ponytail@harness', 'superpowers@claude-plugins-official']"
   [ "$fail" = 0 ] && echo "coding-mode selftest OK"
   return $fail
 }
