@@ -37,7 +37,18 @@ One AskUserQuestion call: header "Today", question "What do you want to start wi
 step 2. Before it, at most one short line of text (a greeting, no summary of the list). The picker's
 automatic "Other" covers anything typed.
 
-## 4. After the answer
+## 4. Name the session
+
+As soon as the answer comes back, name the session after it, so /resume shows the topic and not
+"/bacon:greet". Write a title of 2–6 words: the option label for a picked item ("PC boot crashes"), or the
+subject of what was typed for Other (not the raw text). Then run, from the Bash tool:
+
+`bash "<this skill's base directory>/set-title.sh" "<title>"`
+
+"Show the full list" names nothing yet: name the session once he picks something from the list. If the
+script fails, say so in one line and go on; the work matters more than the title.
+
+## 5. After the answer
 
 - **An item** → read its file, say in three lines or fewer where it stands and what the next step is,
   and ask before doing anything that changes state.
