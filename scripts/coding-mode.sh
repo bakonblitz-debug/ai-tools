@@ -10,6 +10,8 @@
 # ponytail, superpowers. User settings keep them off, so only folders that opt in load them.
 set -u
 CODING_SET="dev-loop@dev-loop ponytail@ponytail superpowers@claude-plugins-official"
+# Plugins that left the set: --check fails while a folder still lists one, a write removes it.
+RETIRED="bacon-dev@ai-tools"
 
 # The interpreter is probed by running it (the PC's python3 is a Store stub that exists and fails).
 PY=""
@@ -30,15 +32,19 @@ if os.path.isfile(path):
 ep = d.get("enabledPlugins")
 ep = ep if isinstance(ep, dict) else {}
 missing = [i for i in ids if ep.get(i) is not True]
+retired = [i for i in os.environ.get("RETIRED", "").split() if i in ep]
 if mode == "check":
-    if missing: print(" ".join(missing)); sys.exit(1)
+    bad = missing + ["retired:" + i for i in retired]
+    if bad: print(" ".join(bad)); sys.exit(1)
     sys.exit(0)
+for i in retired: del ep[i]
 for i in ids: ep[i] = True
 d["enabledPlugins"] = ep
 os.makedirs(os.path.dirname(path), exist_ok=True)
 open(path, "w", encoding="utf-8").write(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
 ' "$1" "$2" $CODING_SET
 }
+export RETIRED
 
 selftest() {
   local fail=0 out rc s; t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
@@ -60,6 +66,12 @@ selftest() {
   ck "merge keeps other keys and flips the false one" "$out" "x 1 True True 4"
   cp "$s" "$t/before"; me "$t/p" >/dev/null; cmp -s "$s" "$t/before"; ck "second run is a no-op (idempotent)" "$?" 0
   echo '{bad' > "$s"; me "$t/p" >/dev/null; ck "unreadable settings.json: exit 2, file untouched" "$?:$(cat "$s")" "2:{bad"
+  printf '{"enabledPlugins":{"dev-loop@dev-loop":true,"ponytail@ponytail":true,"superpowers@claude-plugins-official":true,"bacon-dev@ai-tools":true}}\n' > "$s"
+  out=$(me "$t/p" --check); rc=$?
+  case $rc:$out in 1:*retired:bacon-dev@ai-tools*) ;; *) ck "a retired plugin still listed fails the check, named" "$rc:$out" "1:…retired:bacon-dev@ai-tools" ;; esac
+  me "$t/p" >/dev/null
+  out=$("$PY" -c 'import json,sys;print(sorted(json.load(open(sys.argv[1]))["enabledPlugins"]))' "$s")
+  ck "a write removes the retired plugin" "$out" "['dev-loop@dev-loop', 'ponytail@ponytail', 'superpowers@claude-plugins-official']"
   [ "$fail" = 0 ] && echo "coding-mode selftest OK"
   return $fail
 }
