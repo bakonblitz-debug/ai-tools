@@ -185,7 +185,8 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | `scripts/skill.py` | The `/bacon:skill` command: `list`, `log on/off/tail`, `lint`. The lint enforces the skill rules and exits 1 on a failure. | `py.sh scripts/skill.py lint` |
 | `scripts/skilllog.py` | Optional run log for skill scripts: off until `skill.py log on`; per-machine files in `~/.claude/skill-logs/`, rolled at 1 MB. | `from skilllog import logger` |
 | `scripts/list-skills.py` | Generated skill listings from SKILL.md frontmatter: one plugin, or `--all` for every installed plugin. | `py.sh scripts/list-skills.py --all` |
-| `.githooks/pre-commit` | Blocks a commit that fails `skill.py lint`. On per clone with `git config core.hooksPath .githooks`. | git runs it |
+| `scripts/commit-guard.py` | Refuses staged files damaged by an edit over the SMB share: a script that lost its exec bit (100755 → 100644), or CRLF line endings in a text file. Names the fix. | `py.sh scripts/commit-guard.py --selftest` |
+| `.githooks/pre-commit` | Blocks a commit that fails `skill.py lint` or `commit-guard.py`. On per clone with `git config core.hooksPath .githooks`. | git runs it |
 | `scripts/squash-history.sh` | Rewrites a branch into fewer commits by reusing each group's final tree, so content cannot change. Starts from the upstream, so pushed commits are never rewritten; `--from-root` rebuilds everything. | `squash-history.sh <repo> <groups-dir> [--from-root]` |
 | `bin/now` | Today's date in every format used here, and how many days ago a date was. | `now`, `now 2026-08-11` |
 | `tools/observatory/` | Read-only dashboard over the session and usage metrics (`sessions.tsv`, `usage.tsv`) plus an OpenTelemetry receiver. A self-contained Next.js app in Docker with its own tests; its `README.md` lists its files, so the map names the folder only. | `make up`, then `localhost:3400` |

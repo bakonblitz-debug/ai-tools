@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Blocks a commit that breaks the skill rules (scripts/skill.py lint over this checkout's plugins).
+# Blocks a commit that breaks the skill rules (scripts/skill.py lint over this checkout's plugins),
+# or that carries share damage: a script that lost its exec bit, or CRLF (scripts/commit-guard.py).
 # On per clone, once: git config core.hooksPath .githooks
 root=$(git rev-parse --show-toplevel)
 if ! bash "$root/scripts/py.sh" "$root/scripts/skill.py" lint "$root"/plugins/*/; then
   echo "pre-commit: the skill lint failed (above). Fix it; skip with --no-verify only when he says so." >&2
+  exit 1
+fi
+if ! bash "$root/scripts/py.sh" "$root/scripts/commit-guard.py" "$root"; then
+  echo "pre-commit: staged files were damaged by an edit over the share (above). Fix them; skip with --no-verify only when he says so." >&2
   exit 1
 fi
