@@ -35,7 +35,7 @@ if [ -d "$CTX/.git" ]; then
 > **CONTEXT SYNC CONFLICT** — this clone and origin have diverged (both have
 > commits the other lacks), almost certainly concurrent context/memory writes
 > from two machines. Before relying on the context tree or memory, resolve it
-> using `ai-tools/skills/git-conflict/SKILL.md`, section "Context & memory
+> with the dev-loop plugin's git-conflict skill, section "Notes and memory
 > conflicts": run `git pull --rebase` manually to surface the conflicts, then
 > follow the idea-reconciliation protocol. Never resolve context conflicts silently.
 

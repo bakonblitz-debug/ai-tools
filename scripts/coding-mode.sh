@@ -6,10 +6,10 @@
 #   coding-mode.sh --selftest
 #
 # Merges into an existing settings.json and keeps every other key. The set is the coding mode of
-# docs/coding-standards.md: bacon-dev (architect/ouroboros/handoff + the coding-rules hook),
+# docs/coding-standards.md: dev-loop (architect/ouroboros/handoff + the coding-rules hook),
 # ponytail, superpowers. User settings keep them off, so only folders that opt in load them.
 set -u
-CODING_SET="bacon-dev@ai-tools ponytail@ponytail superpowers@claude-plugins-official"
+CODING_SET="dev-loop@dev-loop ponytail@ponytail superpowers@claude-plugins-official"
 
 # The interpreter is probed by running it (the PC's python3 is a Store stub that exists and fails).
 PY=""
@@ -48,7 +48,7 @@ selftest() {
   s=$t/p/.claude/settings.json; mkdir -p "$t/p/.claude"
   out=$(me "$t/p" --check); rc=$?
   ck "check on a folder with no settings.json fails" "$rc" 1
-  case $out in *bacon-dev@ai-tools*ponytail@ponytail*superpowers@claude-plugins-official*) ;; *) ck "check lists all three missing ids" "$out" "all three" ;; esac
+  case $out in *dev-loop@dev-loop*ponytail@ponytail*superpowers@claude-plugins-official*) ;; *) ck "check lists all three missing ids" "$out" "all three" ;; esac
   [ -e "$s" ] && ck "check must not create the file" "created" "absent"
   me "$t/p" >/dev/null; rc=$?
   ck "write on a fresh folder succeeds" "$rc" 0

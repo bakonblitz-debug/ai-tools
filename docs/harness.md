@@ -346,7 +346,7 @@ call opt-in regardless of plan authorship.
 
 ---
 
-## `architect` — orchestrator (§5 rewrite, full content in `plugins/bacon-dev/skills/architect/SKILL.md`)
+## `architect` — orchestrator (§5 rewrite, full content in `the dev-loop plugin repo, skills/architect/SKILL.md`)
 
 Targeted rewrite, not a rebuild — same "conductor not coupler" philosophy.
 Summary of what changed (full content lives in the skill file itself):

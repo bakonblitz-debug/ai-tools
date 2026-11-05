@@ -97,7 +97,7 @@ check_no_personal_identifiers() {
   REPO=$(cd "$SCRIPTS/.." && pwd)
   command -v git >/dev/null 2>&1 || { echo "git not available"; return 77; }
   git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repo"; return 77; }
-  allow='^(LICENSE|\.claude-plugin/marketplace\.json|plugins/bacon/\.claude-plugin/plugin\.json|plugins/bacon-dev/\.claude-plugin/plugin\.json|\.env\.example)$'
+  allow='^(LICENSE|\.claude-plugin/marketplace\.json|plugins/bacon/\.claude-plugin/plugin\.json|\.env\.example)$'
   hits=$(git -C "$REPO" ls-files \
     | grep -vE "$allow" \
     | while read -r f; do
@@ -161,6 +161,27 @@ check_skill_lint() {
   out=$(bash "$SCRIPTS/py.sh" "$SCRIPTS/skill.py" lint 2>&1); rc=$?
   [ "$rc" -eq 0 ] || { echo "$out" | grep '^fail' | head -3 | cut -c1-160 | tr '\n' ' '; return 1; }
   echo "$out" | tail -1
+}
+
+# Each plugin repo under projects/plugins/ ships its own copy of the shared helpers (py.sh,
+# skilllog.py, list-skills.py, skill.py, commit-guard.py). A copy that differs from the one in
+# ai-tools/scripts means a fix landed in one place only: copy the fixed file over.
+check_plugin_helpers_in_sync() {
+  local root="$WWW/projects/plugins" p f src bad="" n=0
+  [ -d "$root" ] || { echo "no $root"; return 77; }
+  for p in "$root"/*/; do
+    p=${p%/}
+    for f in scripts/py.sh scripts/skilllog.py scripts/list-skills.py scripts/skill.py .githooks/commit-guard.py; do
+      [ -f "$p/$f" ] || continue
+      src="$SCRIPTS/${f##*/}"
+      [ -f "$src" ] || continue
+      n=$((n+1))
+      cmp -s "$src" "$p/$f" || bad="$bad ${p##*/}/$f"
+    done
+  done
+  [ "$n" -gt 0 ] || { echo "no helper copies under $root"; return 77; }
+  [ -z "$bad" ] || { echo "differs from ai-tools/scripts:$bad (copy the fixed one over)"; return 1; }
+  echo "$n helper copies match ai-tools/scripts"
 }
 
 # The derived-value check. The count changes as work is done, so asserting a number
@@ -501,7 +522,7 @@ b
   printf 'case $1 in --selftest) exit 0 ;; esac\n' > "$SCRIPTS/green.sh"
   printf 'import sys\nsys.exit(0 if "--selftest" in sys.argv else 2)\n' > "$SCRIPTS/green.py"
   ctx_expect 0 check_script_selftests
-  # plugin hook scripts are found too (bacon-dev's coding-rules.sh lives outside scripts/)
+  # plugin hook scripts are found too (a plugin hook script lives outside scripts/)
   mkdir -p "$t/plugins/p/hooks"; printf 'case $1 in --selftest) exit 1 ;; esac
 ' > "$t/plugins/p/hooks/red.sh"
   ctx_expect 1 check_script_selftests
@@ -564,6 +585,15 @@ b
   case $out in *projects/a*gone@m*) ;; *) echo "  FAIL: (b) detail lacks project and plugin: $out"; ST_FAIL=1 ;; esac
   rm "$t/h/.claude/plugins/installed_plugins.json"
   p7 77 check_project_plugins_installed                  # no installed_plugins.json on this machine
+  p7 77 check_plugin_helpers_in_sync                     # no projects/plugins/
+  mkdir -p "$t/w/projects/plugins/x/scripts"
+  cp "$SCRIPTS/py.sh" "$t/w/projects/plugins/x/scripts/"
+  p7 0 check_plugin_helpers_in_sync                      # the copy matches
+  echo "# drifted" >> "$t/w/projects/plugins/x/scripts/py.sh"
+  p7 1 check_plugin_helpers_in_sync
+  out=$(WWW=$t/w check_plugin_helpers_in_sync)
+  case $out in *x/scripts/py.sh*) ;; *) echo "  FAIL: (c) detail lacks the drifted copy: $out"; ST_FAIL=1 ;; esac
+  rm -rf "$t/w/projects/plugins"
   mm=$t/w/context/memory; mkdir -p "$mm/index" "$mm/facts"
   p7 77 check_memory_reachable                           # no MEMORY.md yet
   printf -- '- [career](index/career.md) - topic

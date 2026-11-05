@@ -1,8 +1,8 @@
 # ai-tools
 
-> A personal harness for [Claude Code](https://docs.claude.com/en/docs/claude-code): two plugins of skills, the hooks that run around every session, a health check, and the coding standards and prompting runbooks the agents work to.
+> A personal harness for [Claude Code](https://docs.claude.com/en/docs/claude-code): the hooks that run around every session, a health check, a personal plugin, and the coding standards and prompting runbooks the agents work to. The general-purpose skills are published as their own plugins: [dev-loop](https://github.com/bakonblitz-debug/dev-loop) and [skill-kit](https://github.com/bakonblitz-debug/skill-kit).
 
-It started as a playbook ("Claude Dev With Me") and grew into the machinery that runs it. The playbook's workflow now lives in the `bacon-dev` skills; the principles behind it are kept at the end of this file.
+It started as a playbook ("Claude Dev With Me") and grew into the machinery that runs it. The playbook's workflow now lives in the `dev-loop` skills; the principles behind it are kept at the end of this file.
 
 The idea underneath all of it: **a coding agent does its best work when it has one clear job and just enough context to do it.**
 
@@ -37,12 +37,15 @@ Needs bash, python3 and git. No package installs.
 
 The installer asks a few questions, writes `.env`, and **merges** its hooks into `~/.claude/settings.json`: it backs the file up first, leaves your own hooks alone, and prints how to undo everything it did. It refuses unknown flags, and without a terminal it refuses to run unless given `--yes` (take every default); `--help` shows the options.
 
-Then add the plugins inside a Claude Code session:
+Then add the plugins inside a Claude Code session. Each public plugin is its own marketplace; from a local clone (for example under `projects/plugins/`) pass the folder instead of the GitHub name, and edits are live:
 
 ```
-/plugin marketplace add bakonblitz-debug/ai-tools
+/plugin marketplace add bakonblitz-debug/dev-loop
+/plugin install dev-loop@dev-loop
+/plugin marketplace add bakonblitz-debug/skill-kit
+/plugin install skill-kit@skill-kit
+/plugin marketplace add bakonblitz-debug/ai-tools     # the personal bacon plugin, optional
 /plugin install bacon@ai-tools
-/plugin install bacon-dev@ai-tools
 ```
 
 **What you can skip.** Most hooks want a *context repo*: a private git repo of accumulated project notes. If you have none, the installer skips that group; you lose the session digest and the auto-committed memory, not the skills, standards or runbooks. The setup this was built on (two machines sharing one tree over SMB, a local model runner, a macOS launchd job) is optional too: anything you do not have reports SKIP in the health check, not FAIL.
@@ -51,14 +54,13 @@ Then add the plugins inside a Claude Code session:
 
 ## The plugins and their commands
 
-The repo is a Claude Code marketplace (`.claude-plugin/marketplace.json`) with two plugins.
+| Plugin | Repo | What it is for | See its commands |
+|---|---|---|---|
+| `dev-loop` | [dev-loop](https://github.com/bakonblitz-debug/dev-loop) (public) | Coding mode: the plan → prove → build pipeline, tangent hand-offs, merge-conflict resolution | `/dev-loop:list` |
+| `skill-kit` | [skill-kit](https://github.com/bakonblitz-debug/skill-kit) (public) | Listing, logging, linting and creating skills | `/skill-kit:list` |
+| `bacon` | this repo, `plugins/bacon` | Personal toolkit for this workspace: session opener, context-tree lookups, deep engineering mode | `/bacon:list` |
 
-| Plugin | What it is for | See its commands |
-|---|---|---|
-| `bacon` | Everyday toolkit: session opener, context-tree lookups, deep engineering mode, the skill commands | `/bacon:list` |
-| `bacon-dev` | Coding mode: the plan → prove → build pipeline, tangent hand-offs, merge-conflict resolution | `/bacon-dev:list` |
-
-`/bacon:skill list` shows every installed plugin's skills at once, with whether each plugin is on here. All three listings are generated from the skill files by `scripts/list-skills.py`, so no list is kept by hand.
+`/skill-kit:skills list` shows every installed plugin's skills at once, with whether each plugin is on here. The listings are generated from the skill files by `list-skills.py`, so no list is kept by hand. The dev-loop and skill-kit READMEs list their commands.
 
 **bacon**
 
@@ -68,21 +70,9 @@ The repo is a Claude Code marketplace (`.claude-plugin/marketplace.json`) with t
 | `/bacon:second-brain` | Deep engineering mode: orient in code and memory, plan, build test-first, record decisions. |
 | `/bacon:context-query` | Lists context files by the date in their file name ("latest", "since <date>"). |
 | `/bacon:ai-tools-context` | Loads or updates the context tree paired with this repo, for installs without the bootstrap hook. |
-| `/bacon:skill` | `list`, `log on\|off\|tail`, `lint`: lists, logs and checks every plugin's skills. |
-| `/bacon:skill-create` | Creates a new skill from a one-line description. |
 | `/bacon:list` | This table, generated. |
 
-**bacon-dev**
-
-| Command | What it does |
-|---|---|
-| `/bacon-dev:architect` | Conductor for any code change: research, plan, prove the plan, split it into tasks, build, review. Sequences the others. |
-| `/bacon-dev:ouroboros` | Adversarial planning loop: a planner and an attacker until the plan survives, then a verdict. |
-| `/bacon-dev:handoff` | Out-of-scope bug or TODO found mid-task: writes a focused plan in `.plans/` instead of fixing it inline. |
-| `/bacon-dev:git-conflict` | Resolves merge and rebase conflicts, including two agents or worktrees touching the same file. |
-| `/bacon-dev:list` | This table, generated. |
-
-**Coding mode.** `bacon-dev` is off in user settings and switched on per project: `bash scripts/coding-mode.sh <project dir>` enables it (with the other coding plugins) in that folder's `.claude/settings.json`; `--check` reports what is missing without touching anything. Its `SessionStart` hook loads the coding rules from [`docs/coding-standards.md`](docs/coding-standards.md).
+**Coding mode.** `dev-loop` is off in user settings and switched on per project: `bash scripts/coding-mode.sh <project dir>` enables it (with the other coding plugins) in that folder's `.claude/settings.json`; `--check` reports what is missing without touching anything. Its `SessionStart` hook prints the file named by `CODING_RULES_FILE` (here: the workspace's coding rules).
 
 ---
 
@@ -91,21 +81,22 @@ The repo is a Claude Code marketplace (`.claude-plugin/marketplace.json`) with t
 Every skill in every plugin follows the same rules, set on 2026-11-04 and enforced by a lint:
 
 - **Skill code is Python** (3.9, stdlib only). The one shell file is `scripts/py.sh`, which picks a Python that actually runs on the machine (the Windows `python3` is often a Store stub).
-- **Every skill script has `--selftest`** and logs through `scripts/skilllog.py`. Logging is off until `/bacon:skill log on`; logs stay on each machine in `~/.claude/skill-logs/`, and `/bacon:skill log tail <name>` shows the last lines.
+- **Every skill script has `--selftest`** and logs through `scripts/skilllog.py`. Logging is off until `/skill-kit:skills log on`; logs stay on each machine in `~/.claude/skill-logs/`, and `/skill-kit:skills log tail <name>` shows the last lines.
 - **No shell logic in a `SKILL.md`.** A pipe, a `$( )` or a loop belongs in a script the skill calls.
 - **Every plugin has a `list` skill**, and every `SKILL.md` has a name and a description. Descriptions open with the quoted phrases that should trigger them (a warning, not a failure).
+- **A public plugin** (`.claude-plugin/PUBLIC`) carries nothing specific to this workspace: no home paths, machine names, local tools or models, or owner voice.
 
-`/bacon:skill lint` (`scripts/skill.py lint`) checks all of it. The same lint runs in `.githooks/pre-commit`, which blocks a commit that breaks a rule once `git config core.hooksPath .githooks` is set in the clone, and in the health check.
+`/skill-kit:skills lint` (`scripts/skill.py lint`) checks all of it, over this repo's plugin and every plugin installed from a local clone. The same lint runs in `.githooks/pre-commit`, which blocks a commit that breaks a rule once `git config core.hooksPath .githooks` is set in the clone, and in the health check. Each plugin repo carries a copy of `py.sh`, `skilllog.py`, `list-skills.py`, `skill.py` and `commit-guard.py`; the health check fails when a copy differs from the one in `scripts/`.
 
 ---
 
 ## Making a new skill
 
 ```
-/bacon:skill-create "<what it should do, in one line>"
+/skill-kit:create "<what it should do, in one line>"
 ```
 
-It picks the plugin whose subject fits (a new plugin only when asked), checks the name is free, writes the `SKILL.md` and any Python script to the rules above, adds a `list` skill if the plugin has none, runs the lint and the selftests, and commits. The full procedure is in [`plugins/bacon/skills/skill-create/SKILL.md`](plugins/bacon/skills/skill-create/SKILL.md).
+It picks the plugin whose subject fits (a new plugin only when asked), checks the name is free, writes the `SKILL.md` and any Python script to the rules above, adds a `list` skill if the plugin has none, and runs the lint and the selftests. The procedure is in skill-kit's `skills/create/SKILL.md`. Here, the work happens in a worktree on the Mac and is committed there.
 
 ---
 
@@ -119,7 +110,7 @@ It picks the plugin whose subject fits (a new plugin only when asked), checks th
 | `budget` | nothing | `context-budget.py` (warns as the context window fills) |
 | `plans` | a writable `.plans/` | `handoff.sh` (surfaces and checks `.plans/handoff-*.md` files) |
 
-Plugins carry their own hooks: `bacon-dev` adds the coding-rules hook above. Hermes (the local agent) is not wired by the installer.
+Plugins carry their own hooks: `dev-loop` adds the coding-rules hook above. Hermes (the local agent) is not wired by the installer.
 
 ---
 
@@ -140,12 +131,11 @@ The full file index is the **harness map**: [`docs/harness-map.md`](docs/harness
 
 ```
 ai-tools/
-├── .claude-plugin/        # marketplace.json: the two plugins
+├── .claude-plugin/        # marketplace.json: the bacon plugin
 ├── plugins/bacon/         # skills invoked as /bacon:*
-├── plugins/bacon-dev/     # coding mode, /bacon-dev:*, plus its coding-rules hook
 ├── scripts/               # hooks and tools: install.py, health-check.sh, skill.py,
-│                          #   list-skills.py, skilllog.py, py.sh, session-todo.sh, …
-├── .githooks/pre-commit   # the skill lint before every commit
+│                          #   list-skills.py, skilllog.py, py.sh, commit-guard.py, session-todo.sh, …
+├── .githooks/pre-commit   # the skill lint and commit-guard before every commit
 ├── tools/observatory/     # read-only dashboard over session and usage metrics
 ├── bin/now                # dates in the forms the workspace uses, and their age
 ├── config/                # delegation config for the tiered pipeline
@@ -159,7 +149,7 @@ ai-tools/
 
 ## Principles
 
-The workflow is now run by `/bacon-dev:architect`; these are the reasons it looks the way it does.
+The workflow is now run by `/dev-loop:architect`; these are the reasons it looks the way it does.
 
 **The agent is a fast junior, not an oracle.** It writes code faster and spots things a person misses. It also writes code that looks right and fails at runtime: invented methods, columns that do not exist, insecure defaults. The person who merges is accountable, so the person reads the diff.
 
