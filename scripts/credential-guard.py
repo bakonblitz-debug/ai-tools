@@ -2,12 +2,14 @@
 """credential-guard: keep known credential files out of the session.
 
 A Claude Code hook (PreToolUse and PostToolUse, matcher Bash|PowerShell|Read|Grep).
-  Bash        a command that names a known credential file is wrapped so it always
-              succeeds; afterwards its output must be allow-listed key lines only,
-              or the whole output is withheld.
-  PowerShell  a command that names one is denied (use Bash with a key filter).
+Known files: .env and its variants (the main case), Spotify prefs, .netrc, cloud and SSH keys.
+  Bash        a command that names a known file is wrapped so it always succeeds; in its
+              output, every value whose key is not allow-listed is masked (KEY=<withheld>)
+              and every non-key line is withheld. Key names stay visible. Lines a recursive
+              grep prints from a .env file are masked the same way, whatever the command.
+  PowerShell  a command that names one is denied (use Bash).
   Read, Grep  a path or glob that names one is denied.
-The notice names counts only, never a value. The allow path prints nothing.
+The header names counts only, never a value. The allow path prints nothing.
 Allow-lists: ../config/credential-guard.json. Plan: ~/www/.plans/credential-guard/PLAN.md
 
 Usage: credential-guard.py          (hook; event read from stdin)
@@ -29,6 +31,8 @@ WRAP = "trap 'r=$?; echo \"[exit $r]\"; exit 0' EXIT; exec 2>&1; "
 # (label, pattern). A command, path or glob "names" a file when its text matches.
 # A path built at run time (cd x; cat prefs) is not seen: that takes a deliberate attempt.
 KNOWN = [
+    # .env, .env.example, .env.local, .env-backup, .envrc; not process.env.X, .environment, env.ts
+    ("env", r"(?:^|[\s'\"/\\=:<>(,])\.env(?:rc)?(?:[.-][\w-]+)*(?![\w-])"),
     ("spotify-prefs", r"spotify[\\/](?:[^\s'\"|;&<>]*[\\/])?prefs\b"),
     ("netrc", r"[._]netrc\b"),
     ("git-credentials", r"\.git-credentials\b"),
@@ -39,15 +43,17 @@ KNOWN = [
 ]
 _KNOWN = [(label, re.compile(p, re.I)) for label, p in KNOWN]
 
-KEY_LINE = re.compile(r'^"?([\w.\-]+)"?\s*[=:]')
+# group 1: everything up to the value (comment mark, export, key, separator); 2: key; 3: value
+KEY_LINE = re.compile(r'^(\s*(?:#\s*)?(?:export\s+)?"?([\w.\-]+)"?\s*[=:]\s*)(.*)$')
 HARMLESS = re.compile(r"^(?:\[exit \d+\]|\d{1,3})$")  # the wrap's exit line; `echo $?`
+# A grep or rg line from a .env file: path, optional line number, then the line.
+GREP_ENV = re.compile(r"^((?:[^\s:]*[\\/])?\.env(?:rc)?(?:[.-][\w-]+)*:(?:\d+[:-])?)(.*)$")
 
-DENY_REASON = ("credential-guard: %s on a known credential file (%s) is blocked. Read it with the "
-               "Bash tool and print only allow-listed keys, e.g. grep -E '^(key1|key2)=' <file>. "
-               "Allow-lists: ai-tools/config/credential-guard.json.")
-WITHHELD = ("credential-guard: output withheld. It printed %d line%s from a credential file (%s) "
-            "outside the key allow-list. Values are not shown. Print only allow-listed keys, or ask "
-            "him to add a key to ai-tools/config/credential-guard.json.")
+DENY_REASON = ("credential-guard: %s on a known credential file (%s) is blocked. Use the Bash tool "
+               "(cat, grep): key names are shown and values off the allow-list are masked. To change "
+               "the file, edit it through Bash too. Allow-lists: ai-tools/config/credential-guard.json.")
+MASKED = ("credential-guard: %d value%s withheld from a credential file (%s); key names kept. "
+          "To show a key's value, he adds it to ai-tools/config/credential-guard.json.")
 FAILED_PRE = "credential-guard: blocked (internal error on a call that names a credential file)."
 FAILED_POST = "credential-guard: output withheld (internal error on a command that names a credential file)."
 
@@ -117,21 +123,57 @@ def handle(event, cfg):
 
     if ev == "PostToolUse" and tool == "Bash":
         label = names_known(cmd)
-        if not label:
+        resp = event.get("tool_response")
+        parts = [resp.get("stdout"), resp.get("stderr")] if isinstance(resp, dict) else list(_strings(resp))
+        texts, n = [], 0
+        for text in parts:
+            if isinstance(text, str) and text:
+                t, k = _mask_text(text, label, cfg)
+                texts.append(t)
+                n += k
+        if not n:
             return None
-        allowed = set((cfg.get("allow") or {}).get(label) or [])
-        bad = 0
-        for text in _strings(event.get("tool_response")):
-            for line in text.splitlines():
-                line = line.strip()
-                if not line or HARMLESS.match(line):
-                    continue
-                m = KEY_LINE.match(line)
-                if not (m and m.group(1) in allowed):
-                    bad += 1
-        return _withhold(WITHHELD % (bad, "" if bad == 1 else "s", label)) if bad else None
+        head = MASKED % (n, "" if n == 1 else "s", label or "env")
+        return _withhold(head + "\n" + "\n".join(texts))
 
     return None
+
+
+def _allowed(cfg, label):
+    return set((cfg.get("allow") or {}).get(label) or [])
+
+
+def _mask_line(line, allowed):
+    """(line with its value masked unless the key is allowed, values masked)."""
+    s = line.strip()
+    if not s or HARMLESS.match(s):
+        return line, 0
+    m = KEY_LINE.match(line)
+    if m:
+        if m.group(2) in allowed or m.group(3).strip() in ("", '""', "''"):
+            return line, 0
+        return m.group(1) + "<withheld>", 1
+    if s.startswith("#"):
+        return line, 0
+    return "<line withheld>", 1
+
+
+def _mask_text(text, label, cfg):
+    """Mask the output of a command. label: the credential file the command names, or None.
+    Lines a recursive grep prints from a .env file are masked whatever the command was."""
+    out, n = [], 0
+    for line in text.split("\n"):
+        g = GREP_ENV.match(line)
+        if g:
+            rest, k = _mask_line(g.group(2), _allowed(cfg, "env"))
+            line = g.group(1) + rest
+        elif label:
+            line, k = _mask_line(line, _allowed(cfg, label))
+        else:
+            k = 0
+        out.append(line)
+        n += k
+    return "\n".join(out), n
 
 
 def run(raw, load=None):
@@ -194,20 +236,52 @@ def selftest():
           {"command": WRAP + cmd, "description": "d"})
     check("bash pre already wrapped", pre("Bash", {"command": WRAP + cmd}), None)
 
-    # Bash, after.
-    out = post(WRAP + "cat " + sp_unix, "app.autostart-mode=\"off\"\nautologin.blob=\"" + blob + "\"\n[exit 0]\n")
-    check("bash post blob withheld", withheld(out), True)
-    check("bash post notice has no value", blob in json.dumps(out), False)
-    check("bash post notice counts", "1 line" in json.dumps(out), True)
+    def masked(out):
+        o = ((out or {}).get("hookSpecificOutput") or {}).get("updatedToolOutput")
+        return o.get("stdout") if o else None
+
+    # Bash, after: values of keys off the allow-list are masked, key names stay.
+    m = masked(post(WRAP + "cat " + sp_unix,
+                    "app.autostart-mode=\"off\"\nautologin.blob=\"" + blob + "\"\n[exit 0]\n")) or ""
+    check("bash post blob masked", "autologin.blob=<withheld>" in m and blob not in m, True)
+    check("bash post allowed key kept", 'app.autostart-mode="off"' in m, True)
+    check("bash post header counts", m.startswith("credential-guard: 1 value withheld"), True)
     check("bash post allow-listed passes",
           post(WRAP + cmd, "app.autostart-mode=\"off\"\n\n[exit 0]\n"), None)
     check("bash post quoted key passes",
           post(WRAP + cmd, '  "audio.sync_bitrate_enumeration": 4\n'), None)
-    check("bash post blob on stderr withheld", withheld(post(WRAP + cmd, "", "autologin.blob=" + blob)), True)
-    check("bash post non-key line withheld", withheld(post(WRAP + cmd, blob + "\n")), True)
-    check("bash post grep -n prefix withheld", withheld(post(WRAP + cmd, "12:app.autostart-mode=off\n")), True)
+    m = masked(post(WRAP + cmd, "", "autologin.blob=" + blob)) or ""
+    check("bash post blob on stderr masked", "<withheld>" in m and blob not in m, True)
+    m = masked(post(WRAP + cmd, blob + "\n")) or ""
+    check("bash post non-key line withheld", "<line withheld>" in m and blob not in m, True)
+    m = masked(post(WRAP + cmd, "12:autologin.blob=" + blob + "\n")) or ""
+    check("bash post grep -n prefix masked", blob not in m and "<withheld>" in m, True)
     check("bash post unrelated untouched", post("cat notes.txt", "token=" + blob + "\n"), None)
     check("bash post exit-code line passes", post(WRAP + "[ -f " + sp_unix + " ]; echo $?", "0\n[exit 0]\n"), None)
+
+    # .env files, the main case.
+    envp = "/app/.e" + "nv"
+    cfg["allow"]["env"] = ["APP_ENV"]
+    check("env pre wrap", "updatedInput" in json.dumps(pre("Bash", {"command": "cat " + envp})), True)
+    m = masked(post(WRAP + "cat " + envp,
+                    "APP_ENV=local\nDB_PASSWORD=" + blob + "\n# DB_PASSWORD=" + blob + "\nexport API_TOKEN="
+                    + blob + "\nEMPTY_ONE=\n# just a comment\n[exit 0]\n")) or ""
+    for want in ["APP_ENV=local", "DB_PASSWORD=<withheld>", "# DB_PASSWORD=<withheld>",
+                 "export API_TOKEN=<withheld>", "EMPTY_ONE=", "# just a comment"]:
+        check("env keeps " + want, want in m, True)
+    check("env no value", blob not in m, True)
+    check("env header counts", m.startswith("credential-guard: 3 values withheld"), True)
+    for p in [envp + ".example", "backend/.e" + "nv.local", "./.e" + "nv", "~/.e" + "nvrc", envp + "-backup"]:
+        check("env known " + p, decision(pre("Read", {"file_path": p})), "deny")
+    check("env glob known", decision(pre("Grep", {"pattern": "x", "glob": "**/.e" + "nv*"})), "deny")
+    for p in ["/repo/.environment.md", "src/env.ts", "/repo/dotenv.md"]:
+        check("env not known " + p, pre("Read", {"file_path": p}), None)
+    check("env process.env untouched", pre("Bash", {"command": "grep -rn process.e" + "nv.APP_KEY src"}), None)
+    # A recursive grep names no file but prints .env lines with a file prefix.
+    m = masked(post("grep -rn APP_KEY .", "./.e" + "nv:3:APP_KEY=" + blob + "\nsrc/a.php:9:env('APP_KEY')\n")) or ""
+    check("env grep prefix masked", "./.e" + "nv:3:APP_KEY=<withheld>" in m and blob not in m, True)
+    check("env grep other lines kept", "src/a.php:9:env('APP_KEY')" in m, True)
+    check("env grep allowed key passes", post("grep -rn APP_ENV .", "./.e" + "nv:1:APP_ENV=local\n"), None)
 
     # PowerShell, Read, Grep: denied when they name a known file.
     check("ps deny", decision(pre("PowerShell", {"command": "Get-Content " + sp_users})), "deny")
