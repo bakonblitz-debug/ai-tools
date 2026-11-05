@@ -61,15 +61,26 @@ current task's focus is the higher-order goal.
    of parking it. The share is visible from all three systems. The digest reads both
    locations and dedups by filename, so an older plan in `~/.claude/plans/` still shows
    up; new ones belong on the share.
-3. **Surface it and ask.** Show the user the plan path and a one-line summary, then
+
+   **The status goes under a `## Status` heading, nothing else.** The digest reads a
+   handoff's state only from the first non-blank line after `## Status`: `open`,
+   optionally followed by ` — <short status text>` (greet shows that text), or the word
+   done to close it. A status line placed anywhere else (for example straight under the
+   title) is not read; the handoff is listed as "NO STATUS" instead of as open work.
+   Keep the heading even when you update the status later.
+3. **Check that it surfaces.** Run `bash ~/www/ai-tools/scripts/session-todo.sh ~/www`
+   (on the PC through `ssh mac`, with stdin from /dev/null) and confirm
+   the new file is in the list with its `open` text. Never tell the user that greet or
+   the next session will pick it up until you have seen it there.
+4. **Surface it and ask.** Show the user the plan path and a one-line summary, then
    ask whether to spawn the subagent now, hand it off later, or skip. **Wait for the
    go-ahead** — do not spawn unprompted. (The user works in plan mode and reads
    diffs; they decide when a second agent starts touching code.)
-4. **On approval, spawn the subagent** (the Agent tool) whose entire job is that one
+5. **On approval, spawn the subagent** (the Agent tool) whose entire job is that one
    plan. Point it at the `.md` and give it only the context it needs — its value
    comes from a small, focused context, so don't dump the whole conversation into
    it.
-5. **Return to the primary task.** The tangent is now someone else's job. Do not let
+6. **Return to the primary task.** The tangent is now someone else's job. Do not let
    it expand the scope of what you were doing.
 
 ## The handoff plan template
@@ -103,8 +114,11 @@ subagent to plan.
 How to confirm the fix works: which tests to run, what to check by running the app.
 
 ## Status
-open
+open — <one line: where it stands, what is next>
 ```
+
+The `## Status` section is required (see step 2); the other sections can be short
+for a handoff that is notes rather than a coding task, but they keep their headings.
 
 Keep the plan tight. A cold reader — human or agent — should be able to pick it up
 and know exactly what to do and where the edges are.

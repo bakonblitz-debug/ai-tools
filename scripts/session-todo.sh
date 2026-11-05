@@ -94,8 +94,14 @@ scan_handoffs() {
       b=${f##*/}
       case $seen in *" $b "*) continue ;; esac
       seen="$seen$b "
-      st=$(awk '/^## Status/ { s = 1; next } s && NF { print; exit }' "$f")
-      case $st in [Oo]pen*) ;; *) continue ;; esac
+      # A handoff without a readable "## Status" is listed, not dropped: dropping it
+      # silently is how one went missing from greet on 2026-11-04.
+      st=$(awk '/^## Status/ { s = 1; next } s && NF { print; f = 1; exit } END { if (!f) print "__none__" }' "$f")
+      case $st in
+        __none__) st="NO STATUS — add a '## Status' section (open or done)" ;;
+        [Oo]pen*) ;;
+        *) continue ;;
+      esac
       printf '%s\tplans/%s\t%s\n' "$(mtime_age "$f")" "$b" "$st"
     done
   done | LC_ALL=C sort -rn | cut -f2-   # newest first
@@ -198,6 +204,13 @@ selftest() {
   case $(printf '%s\n' "$h" | tail -1) in
     [0-9]*"d	plans/handoff-old.md	open — waiting on the PC") ;;
     *) echo "FAIL: old handoff must be aged and keep its status text:"; echo "$h"; exit 1 ;;
+  esac
+  # status line under the title, no "## Status" heading: listed as NO STATUS, never dropped
+  mkdir -p "$t/nostatus"
+  printf '# f\n\nopen — under the title\n\n## Context\n\nx\n' > "$t/nostatus/handoff-bare.md"
+  case $(scan_handoffs "$t/nostatus") in
+    *"plans/handoff-bare.md	NO STATUS"*) ;;
+    *) echo "FAIL: a handoff without ## Status must be listed as NO STATUS:"; scan_handoffs "$t/nostatus"; exit 1 ;;
   esac
 
   # the real WSL2-HANDOFF §11b shape: an assertion left standing 11 days after the fix.
