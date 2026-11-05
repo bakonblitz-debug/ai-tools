@@ -110,6 +110,7 @@ ai-tools/
 ├── bin/now                           on PATH, callable as `now`
 ├── tools/observatory/                metrics dashboard, a self-contained app (own README)
 ├── config/delegation.yaml            tier → model sketch for the local agent (not live)
+├── config/credential-guard.json      key allow-lists for credential-guard.py
 ├── templates/                        task-spec, spike, launchd job
 ├── docs/                             this page, standards, runbooks, setup
 ├── .env.example                      every machine-local setting, documented
@@ -159,6 +160,7 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | `scripts/context-budget.py` | UserPromptSubmit | Reads the transcript; past 150,000 tokens it tells the model to write the automatic handoff. | change the token threshold |
 | `scripts/sync-memory.sh` | PostToolUse (Write/Edit), Stop | Commits and pushes the context repo when a file under `context/` or `memory/` changed; regenerates indexes with `context-index.sh` first. | change what gets auto-committed |
 | `scripts/session-audit.py` | Stop | Turns the transcript into one metrics row (`sessions.tsv`) and queues the rare signals that need a verdict (`candidates.md`). Never reads your message text. | add a metric |
+| `scripts/credential-guard.py` | PreToolUse (Bash/PowerShell/Read/Grep), PostToolUse (Bash) | Keeps known credential files (Spotify `prefs`, `.netrc`, `.aws/credentials`, SSH keys…) out of the session: a Bash command that names one may print only allow-listed key lines, or its whole output is withheld; PowerShell, Read and Grep on one are denied. | add a credential file |
 | `scripts/priority-line.sh` | statusLine (and SessionStart) | One line: progress on the priority checklist and its next item. | change the status line |
 
 ### Helpers (called by other scripts)
@@ -220,6 +222,7 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | `templates/spike-template.md` | A time-boxed spike that answers one question. |
 | `templates/context-check.plist.example` | launchd job for `context-check-monthly.sh` (macOS). |
 | `config/delegation.yaml` | Which model handles each tier of the local-agent pipeline. A reviewable sketch, not read live. |
+| `config/credential-guard.json` | Per credential file, the keys whose lines `credential-guard.py` lets through. Add a key only when its value is not a secret. |
 | `.env.example` | Every machine-local setting, each with the script that reads it. Copy to `.env` (gitignored). |
 | `README.md` | Principles and the four-phase workflow (Plan → Build → Review → Ship). |
 
