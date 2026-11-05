@@ -1,181 +1,185 @@
-# Claude Dev With Me
+# ai-tools
 
-> My personal playbook for building software with Claude Code: how I plan, build, review, and ship — and how I keep an agent focused so it writes code I'd actually merge.
+> A personal harness for [Claude Code](https://docs.claude.com/en/docs/claude-code): two plugins of skills, the hooks that run around every session, a health check, and the coding standards and prompting runbooks the agents work to.
 
-This repo is the source of truth for how I work with [Claude Code](https://docs.claude.com/en/docs/claude-code) on my own projects. It's a living document — I add to it after I learn something the hard way, not before.
+It started as a playbook ("Claude Dev With Me") and grew into the machinery that runs it. The playbook's workflow now lives in the `bacon-dev` skills; the principles behind it are kept at the end of this file.
 
-The whole thing rests on one idea: **a coding agent does its best work when it has one clear job and just enough context to do it.** Everything below is in service of that.
+The idea underneath all of it: **a coding agent does its best work when it has one clear job and just enough context to do it.**
 
 ---
 
 ## Contents
 
-- [Quick reference (Cheat Sheet)](docs/cheat-sheet.md) — one-page summary
-- [Setup](docs/setup.md) — install checklist, Laravel Boost, plugins
-- [Models](docs/models.md) — which model for which job, and how to switch
-- [Glossary](docs/glossary.md) — MCP, Boost, skill, agent, the four phases
-- [Prompting guides](docs/prompting/) — copy-paste runbooks per scenario
-- [The harness](docs/README.md) — the machinery: standards, skills, scripts
-- [Harness map](docs/harness-map.md) — every file, what fires it, what it touches ([interactive version](docs/harness-map.html))
+1. [Quick start](#quick-start)
+2. [The plugins and their commands](#the-plugins-and-their-commands)
+3. [Skill rules](#skill-rules)
+4. [Making a new skill](#making-a-new-skill)
+5. [Hooks](#hooks)
+6. [Health check](#health-check)
+7. [Where everything is](#where-everything-is)
+8. [Principles](#principles)
 
-1. [Running it yourself](#running-it-yourself)
-2. [Principles](#principles)
-3. [The Workflow](#the-workflow)
-4. [The four phases](#the-four-phases)
-5. [Prompting guides](#prompting-guides)
-6. [Repository layout](#repository-layout)
+Further reading: [harness design](docs/README.md) · [coding standards](docs/coding-standards.md) · [prompting guides](docs/prompting/) · [setup](docs/setup.md) · [models](docs/models.md) · [glossary](docs/glossary.md) · [cheat sheet](docs/cheat-sheet.md)
 
 ---
 
-## Running it yourself
+## Quick start
 
 ```
 git clone git@github.com:bakonblitz-debug/ai-tools.git
+python3 ai-tools/scripts/install.py --dry-run   # shows the plan, touches nothing
 python3 ai-tools/scripts/install.py
+git -C ai-tools config core.hooksPath .githooks # the pre-commit skill lint, once per clone
+bash ai-tools/scripts/health-check.sh
 ```
 
-The installer asks three questions, writes `.env`, and **merges** into your
-`~/.claude/settings.json` — it backs the file up first and leaves your own hooks alone.
-It prints how to undo everything it did. `--dry-run` shows the plan without touching anything.
+Needs bash, python3 and git. No package installs.
 
-Needs bash, python3 and git. Nothing else, no package installs.
+The installer asks a few questions, writes `.env`, and **merges** its hooks into `~/.claude/settings.json`: it backs the file up first, leaves your own hooks alone, and prints how to undo everything it did. Every prompt has a default, so run it in a terminal and read each question.
 
-**What you can decline.** Six of the eight hooks want a *context repo* — a private git repo of
-accumulated project notes. Most people cloning this will not have one, and the installer skips
-that group rather than wiring hooks that fail. The harness still works without it; you lose the
-session digest and the auto-committed memory, not the standards, skills or prompting guides.
+Then add the plugins inside a Claude Code session:
 
-**What is specific to my setup and safe to ignore.** Two machines sharing one tree over SMB
-(hence `REMOTE_HOST` and the `ssh` checks), a local model runner, and a macOS launchd job for a
-monthly consistency check. Every one of them degrades to SKIP if you do not have it — run
-`bash scripts/health-check.sh` and anything inapplicable says SKIP rather than failing.
+```
+/plugin marketplace add bakonblitz-debug/ai-tools
+/plugin install bacon@ai-tools
+/plugin install bacon-dev@ai-tools
+```
+
+**What you can skip.** Most hooks want a *context repo*: a private git repo of accumulated project notes. If you have none, the installer skips that group; you lose the session digest and the auto-committed memory, not the skills, standards or runbooks. The setup this was built on (two machines sharing one tree over SMB, a local model runner, a macOS launchd job) is optional too: anything you do not have reports SKIP in the health check, not FAIL.
+
+---
+
+## The plugins and their commands
+
+The repo is a Claude Code marketplace (`.claude-plugin/marketplace.json`) with two plugins.
+
+| Plugin | What it is for | See its commands |
+|---|---|---|
+| `bacon` | Everyday toolkit: session opener, context-tree lookups, deep engineering mode, the skill commands | `/bacon:list` |
+| `bacon-dev` | Coding mode: the plan → prove → build pipeline, tangent hand-offs, merge-conflict resolution | `/bacon-dev:list` |
+
+`/bacon:skill list` shows every installed plugin's skills at once, with whether each plugin is on here. All three listings are generated from the skill files by `scripts/list-skills.py`, so no list is kept by hand.
+
+**bacon**
+
+| Command | What it does |
+|---|---|
+| `/bacon:greet` | Session opener: offers what is open today as a picker. Run it as the first prompt (`claude "/bacon:greet"`). |
+| `/bacon:second-brain` | Deep engineering mode: orient in code and memory, plan, build test-first, record decisions. |
+| `/bacon:context-query` | Lists context files by the date in their file name ("latest", "since <date>"). |
+| `/bacon:ai-tools-context` | Loads or updates the context tree paired with this repo, for installs without the bootstrap hook. |
+| `/bacon:skill` | `list`, `log on\|off\|tail`, `lint`: lists, logs and checks every plugin's skills. |
+| `/bacon:skill-create` | Creates a new skill from a one-line description. |
+| `/bacon:list` | This table, generated. |
+
+**bacon-dev**
+
+| Command | What it does |
+|---|---|
+| `/bacon-dev:architect` | Conductor for any code change: research, plan, prove the plan, split it into tasks, build, review. Sequences the others. |
+| `/bacon-dev:ouroboros` | Adversarial planning loop: a planner and an attacker until the plan survives, then a verdict. |
+| `/bacon-dev:handoff` | Out-of-scope bug or TODO found mid-task: writes a focused plan in `.plans/` instead of fixing it inline. |
+| `/bacon-dev:git-conflict` | Resolves merge and rebase conflicts, including two agents or worktrees touching the same file. |
+| `/bacon-dev:list` | This table, generated. |
+
+**Coding mode.** `bacon-dev` is off in user settings and switched on per project: `bash scripts/coding-mode.sh <project dir>` enables it (with the other coding plugins) in that folder's `.claude/settings.json`; `--check` reports what is missing without touching anything. Its `SessionStart` hook loads the coding rules from [`docs/coding-standards.md`](docs/coding-standards.md).
+
+---
+
+## Skill rules
+
+Every skill in every plugin follows the same rules, set on 2026-11-04 and enforced by a lint:
+
+- **Skill code is Python** (3.9, stdlib only). The one shell file is `scripts/py.sh`, which picks a Python that actually runs on the machine (the Windows `python3` is often a Store stub).
+- **Every skill script has `--selftest`** and logs through `scripts/skilllog.py`. Logging is off until `/bacon:skill log on`; logs stay on each machine in `~/.claude/skill-logs/`, and `/bacon:skill log tail <name>` shows the last lines.
+- **No shell logic in a `SKILL.md`.** A pipe, a `$( )` or a loop belongs in a script the skill calls.
+- **Every plugin has a `list` skill**, and every `SKILL.md` has a name and a description. Descriptions open with the quoted phrases that should trigger them (a warning, not a failure).
+
+`/bacon:skill lint` (`scripts/skill.py lint`) checks all of it. The same lint runs in `.githooks/pre-commit`, which blocks a commit that breaks a rule once `git config core.hooksPath .githooks` is set in the clone, and in the health check.
+
+---
+
+## Making a new skill
+
+```
+/bacon:skill-create "<what it should do, in one line>"
+```
+
+It picks the plugin whose subject fits (a new plugin only when asked), checks the name is free, writes the `SKILL.md` and any Python script to the rules above, adds a `list` skill if the plugin has none, runs the lint and the selftests, and commits. The full procedure is in [`plugins/bacon/skills/skill-create/SKILL.md`](plugins/bacon/skills/skill-create/SKILL.md).
+
+---
+
+## Hooks
+
+`scripts/install.py` wires three groups, split by what each needs:
+
+| Group | Needs | Hooks |
+|---|---|---|
+| `context` | a context repo | `claude-bootstrap.sh` (session digest: open handoffs, priority item), `plan-mindset.sh`, `wrong.sh`, `sync-memory.sh` (auto-commits context and memory writes), `session-audit.py` |
+| `budget` | nothing | `context-budget.py` (warns as the context window fills) |
+| `plans` | a writable `.plans/` | `handoff.sh` (surfaces and checks `.plans/handoff-*.md` files) |
+
+Plugins carry their own hooks: `bacon-dev` adds the coding-rules hook above. Hermes (the local agent) is not wired by the installer.
+
+---
+
+## Health check
+
+```
+bash scripts/health-check.sh             # every check, one line each
+bash scripts/health-check.sh skill       # only checks whose name contains "skill"
+```
+
+Each check prints PASS, FAIL or SKIP, and a failing one prints the command to run by hand. It covers the workspace and the other machine, every script's `--selftest`, the skill lint, that the harness map lists every file, that the context tree is synced and consistent, that coding-mode projects have their plugins, and `no_personal_identifiers`: this repo is public, so no personal name or address may appear outside a short allowlist (the licence and the plugin manifests).
+
+---
+
+## Where everything is
+
+The full file index is the **harness map**: [`docs/harness-map.md`](docs/harness-map.md), with an [interactive version](docs/harness-map.html). It lists every file, what fires it, and what it touches; the health check fails when a file is missing from it.
+
+```
+ai-tools/
+├── .claude-plugin/        # marketplace.json: the two plugins
+├── plugins/bacon/         # skills invoked as /bacon:*
+├── plugins/bacon-dev/     # coding mode, /bacon-dev:*, plus its coding-rules hook
+├── scripts/               # hooks and tools: install.py, health-check.sh, skill.py,
+│                          #   list-skills.py, skilllog.py, py.sh, session-todo.sh, …
+├── .githooks/pre-commit   # the skill lint before every commit
+├── tools/observatory/     # read-only dashboard over session and usage metrics
+├── bin/now                # dates in the forms the workspace uses, and their age
+├── config/                # delegation config for the tiered pipeline
+├── templates/             # spike and task-spec templates, the launchd example
+├── docs/                  # harness design and map, coding standards, prompting runbooks,
+│                          #   setup, models, glossary, cheat sheet
+└── .env.example           # every machine-local key, documented
+```
 
 ---
 
 ## Principles
 
-A few things I've found to be true. They're here so future-me remembers *why* the workflow looks the way it does.
+The workflow is now run by `/bacon-dev:architect`; these are the reasons it looks the way it does.
 
-**The agent is a fast junior, not an oracle.** Claude can write more code faster than I can, and it can spot things I miss. It can also produce code that looks right and fails in ways I won't see until runtime — invented methods, columns that don't exist, insecure defaults, patterns that don't match the rest of the codebase. I'm the one accountable for what ships. I read the diff.
+**The agent is a fast junior, not an oracle.** It writes code faster and spots things a person misses. It also writes code that looks right and fails at runtime: invented methods, columns that do not exist, insecure defaults. The person who merges is accountable, so the person reads the diff.
 
-**Watch for hallucinations.** Claude won't tell me when it's guessing. The tells:
-- A method, helper, or class that doesn't exist — grep for it before trusting it.
-- A column, table, or relationship not in the schema — check the migrations and models.
-- An API call whose parameters or return shape don't match the real docs.
-- Code that compiles but breaks on a path I didn't test.
+**Watch for invented code.** A method, column or API parameter that is not in the source is the usual tell. Ask "where is this defined? Show me the source." If it cannot point to a real location, it invented it.
 
-When something looks plausible but off, I ask: *"Where is this defined? Show me the source."* If it can't point to a real location, it invented it.
+**One job per agent.** Planning, building and reviewing are different disciplines; a reviewer that wrote the code is a bad reviewer. Splitting the work keeps each context small and each task sharp.
 
-**One job per agent.** I don't use a single prompt to plan, build, *and* review. Each is a different discipline. A reviewer that wrote the code it's reviewing is a bad reviewer. Splitting the work keeps each context small and each task sharp.
+**Context is a budget.** Past a point, more context means more drift. Keep instructions short, load only the files a task needs, start fresh sessions for unrelated work.
 
-**Context is a budget, not a free resource.** Tokens get spent reading guidelines and generating output. More context in a session doesn't mean better output — past a point it means *worse* output, more drift, more hallucination. Instructions near the start of a session (and near the start of `CLAUDE.md`) carry more weight than ones buried later. So I keep instructions short, load only the files a task needs, and start fresh sessions for unrelated work.
+**Feed it real state, not guesses.** On Laravel projects, [Laravel Boost](docs/setup.md#laravel-boost) lets the agent read the real routes, models and migrations instead of inferring them.
 
-**Feed it real state, not guesses.** On Laravel projects I run [Laravel Boost](docs/setup.md#laravel-boost) so Claude reads my actual routes, models, and migrations over MCP instead of inferring them. This is the single biggest reduction in both hallucinations and wasted tokens — it stops the agent grepping around to rediscover what the project already knows.
+**Plan before anything non-trivial, test first for anything with logic.** A failing test written before the code tests what the code is supposed to do. The rule is in [`coding-standards.md`](docs/coding-standards.md#tdd-rule); the runbook is [`tdd.md`](docs/prompting/tdd.md).
 
-**Plan mode for anything non-trivial.** <kbd>Shift</kbd>+<kbd>Tab</kbd> twice until it says *Plan Mode*. The agent writes a plan and waits for my approval before touching files. I get to catch a bad approach before it becomes a bad diff.
+**Review is part of building.** A separate code-review and security pass runs on the finished change, before it counts as done. Findings are must-fix, should-fix or note ([`review-triggers.md`](docs/prompting/review-triggers.md)).
 
-**Review is part of building, not a separate phase that gets skipped.** The review pass happens before I consider something done — not after something breaks.
-
----
-
-## The Workflow
-
-Every task — a one-line fix, a feature, a refactor — moves through the same four phases. Simple changes blow through them in seconds; big ones take real time at each step.
-
-```
-Receive request
-   │
-   ▼
-Phase 1 — Plan      scope · files · tests · open questions
-   │
-   ▼
-Phase 2 — Build     implement against the plan, write tests
-   │
-   ▼
-Phase 3 — Review    separate code-review + security pass
-   │
-   ▼
-Phase 4 — Ship      verify it runs, commit, push
-```
-
-Not every change needs the full ceremony. If I already know exactly what to change and it's one line, the token cost of planning isn't worth it — I just make the change. The judgment call is: *is the change well-understood, or am I guessing?* If I'm guessing, I plan.
-
----
-
-## The four phases
-
-### Phase 1 — Plan
-
-Pick the [prompting guide](docs/prompting/) that matches the task and use its opening prompt in **Plan Mode**. A good plan states:
-
-- **What's changing**, including scope boundaries — what I am *and am not* doing.
-- **The files likely to be touched** (optional — naming them constrains token use when I already know; otherwise let the agent map the codebase).
-- **The testing approach** — how I'll know it works.
-- **Open questions** — anything I need to decide before implementation.
-
-If the agent hits a question it can't answer, I have it note the question in the plan and proceed with the parts that are unblocked, rather than stalling everything.
-
-### Phase 2 — Build
-
-Implement against the plan from Phase 1. Claude writes the change, runs the existing tests, and writes new tests for new behavior. On Laravel projects, **Boost + the Laravel best-practices skill** keep the generated code aligned with framework conventions.
-
-For anything with real logic — and *always* for bug fixes — I build it **test-first**: write a failing test for the next behavior, watch it fail for the right reason, write the simplest code to pass, then refactor while green. A test written before the code tests what the code is *supposed* to do, which is most of where bugs come from. This is the playbook's main "fewer bugs by construction" lever — the TDD rule in [coding-standards.md](docs/coding-standards.md#tdd-rule) is the discipline, [`tdd.md`](docs/prompting/tdd.md) is the runbook. I skip the ceremony for trivial behavior-free code and throwaway spikes; I don't bureaucratize it.
-
-Build is done when the change compiles, tests pass (each new one having been seen to fail then pass), and I've read the diff myself.
-
-Structural cleanup of code that's drifted is *not* a build-time job — that's a separate refactor pass (see [`scoped-refactor.md`](docs/prompting/scoped-refactor.md)). "Implement this feature" and "untangle this module" are different tasks; mixing them produces a worse version of both.
-
-### Phase 3 — Review
-
-This is the phase that separates this from "just letting the agent write stuff." The review runs as a **separate pass on the finished change**, not as part of the prompt that generated it.
-
-Two passes by default:
-- **Code review** — structure, naming, error handling, test coverage, convention adherence. (`/code-review`, or the `feature-dev` plugin's reviewer.)
-- **Security review** — injection surfaces, auth/authz, secrets handling, dependency CVEs, framework misconfiguration. (`/security-review`.)
-
-If they don't trigger on their own, I prompt: *"Have the code-review and security agents review the most recent uncommitted work."*
-
-Findings get triaged: **must-fix** (blocks the commit, loops back to Phase 2), **should-fix** (fix now if cheap, else note it), **note** (logged for later). See [`review-triggers.md`](docs/prompting/review-triggers.md).
-
-### Phase 4 — Ship
-
-Verify the change actually runs (not just that tests pass — run the app and look at the thing), then commit and push. One commit per feature per day, with a subject naming the feature or fix and a body listing the changes: see the Commits section of [`coding-standards.md`](docs/coding-standards.md).
-
----
-
-## Prompting guides
-
-The workflow says *what* happens. The [`docs/prompting/`](docs/prompting/) guides say *how to prompt* for the scenarios that come up most. Each is a short runbook: when to use it, the opening prompt, what the review follow-ups look like, and the common ways it goes wrong.
-
-| Scenario | Guide |
-|----------|-------|
-| Onboarding onto a codebase (mine or inherited) | [`project-intake.md`](docs/prompting/project-intake.md) |
+| Scenario | Runbook |
+|---|---|
+| Onboarding onto a codebase | [`project-intake.md`](docs/prompting/project-intake.md) |
 | Fixing a reproducible bug | [`bug-fix.md`](docs/prompting/bug-fix.md) |
-| Building a scoped new feature | [`new-feature.md`](docs/prompting/new-feature.md) |
-| Building behaviour test-first (red-green-refactor) | [`tdd.md`](docs/prompting/tdd.md) |
-| Behaviour-preserving cleanup of one area | [`scoped-refactor.md`](docs/prompting/scoped-refactor.md) |
+| Building a scoped feature | [`new-feature.md`](docs/prompting/new-feature.md) |
+| Building test-first | [`tdd.md`](docs/prompting/tdd.md) |
+| Behaviour-preserving cleanup | [`scoped-refactor.md`](docs/prompting/scoped-refactor.md) |
 | Running review on demand | [`review-triggers.md`](docs/prompting/review-triggers.md) |
-
-I add guides as I hit new scenarios. A guide earns its place *after* I've done the thing once and learned what the prompt should say.
-
----
-
-## Repository layout
-
-```
-ai-tools/
-├── README.md              # This file — principles + workflow
-├── plugins/bacon/         # The Claude Code plugin: skills invoked as bacon:*
-├── plugins/bacon-dev/     # Coding-mode plugin: skills invoked as bacon-dev:*
-├── scripts/               # Hooks and tools: install.py, health-check.sh, session-todo.sh, …
-├── bin/                   # `now`
-├── config/                # Delegation config
-├── templates/             # Spike and task-spec templates, the launchd example
-├── docs/                  # Harness design, coding standards, prompting runbooks,
-│                          #   setup, models, glossary, cheat sheet
-└── .env.example           # Every machine-local key, documented
-```
-
----
-
-*A personal, evolving playbook. Updated whenever I learn something worth writing down.*
