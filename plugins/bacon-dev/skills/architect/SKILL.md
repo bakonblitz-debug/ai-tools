@@ -1,7 +1,7 @@
 ---
 name: architect
 description: >
-  Conductor for any code change, small ones included: new project, add a feature, fix a bug, refactor, change behaviour, "build X", "plan X", "design X". Runs brainstorming → ouroboros → writing-plans → subagent build → verification. Skips only pure reads, one-line typo edits, or "skip planning".
+  "new project", "add a feature", "fix a bug", "refactor", "change behaviour", "build X", "plan X", "design X". Conductor for any code change, small ones included: runs brainstorming → ouroboros → writing-plans → subagent build → verification. Skips only pure reads, one-line typo edits, or "skip planning".
 ---
 
 # Architect — conductor for every code change

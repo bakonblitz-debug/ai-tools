@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # squash-history.sh — rewrite a branch into fewer commits with new messages.
-# Usage: squash-history.sh <repo> <groups-dir>
+# Usage: squash-history.sh <repo> <groups-dir> [--from-root]
 #        squash-history.sh --selftest
+#
+# Only commits after the branch's upstream are rewritten: the first new commit sits on
+# the last pushed one, and a group ending at a pushed commit is refused. No upstream,
+# or --from-root, rebuilds from the first commit.
 #
 # <groups-dir> holds one message file per new commit, named NN-<sha>.txt, where
 # <sha> is the LAST original commit of the group. Files are applied in name order.
@@ -20,7 +24,14 @@ squash() {
   [ -n "$branch" ] || { echo "squash-history: detached HEAD, refusing" >&2; return 1; }
   old="$(git rev-parse HEAD)"
 
-  parent=""; prev=""; last=""
+  # Start from what is already pushed, so pushed commits are never rewritten.
+  # No upstream, or --from-root: rebuild from the first commit.
+  base=""
+  if [ "${3:-}" != "--from-root" ] && up="$(git rev-parse --verify --quiet '@{upstream}')"; then
+    base="$(git merge-base "$old" "$up")"
+  fi
+
+  parent="$base"; prev="$base"; last=""
   for f in "$groups"/*.txt; do
     [ -s "$f" ] || { echo "squash-history: empty message $f" >&2; return 1; }
     sha="$(basename "$f" .txt)"; sha="${sha#*-}"
@@ -29,6 +40,9 @@ squash() {
     # groups must walk forward through the original history, in order
     git merge-base --is-ancestor "$last" "$old" \
       || { echo "squash-history: $sha is not on $branch" >&2; return 1; }
+    if [ -n "$base" ] && git merge-base --is-ancestor "$last" "$base"; then
+      echo "squash-history: $sha is already pushed; pass --from-root to rewrite pushed history" >&2; return 1
+    fi
     if [ -n "$prev" ]; then
       [ "$prev" != "$last" ] && git merge-base --is-ancestor "$prev" "$last" \
         || { echo "squash-history: $f is out of order" >&2; return 1; }
@@ -76,11 +90,43 @@ selftest() {
   git checkout -q -b short "$tip"; rm "$tmp/g"/02-*.txt
   if ( squash "$tmp/r" "$tmp/g" >/dev/null 2>&1 ); then echo "FAIL short list accepted"; exit 1; fi
   [ "$(git rev-parse HEAD)" = "$tip" ]                                    || { echo "FAIL branch moved"; exit 1; }
+
+  # Pushed history is never rewritten (2026-11-04: a root rebuild of ai-tools main
+  # nearly went to GitHub). c1-c2 pushed, c3-c5 local: only c3-c5 may be squashed.
+  git init -q --bare "$tmp/remote.git"
+  git init -q "$tmp/p"
+  (
+    cd "$tmp/p"
+    git config user.name t; git config user.email t@t
+    git checkout -q -b main
+    for i in 1 2; do echo "$i" > "f$i"; git add .; git commit -qm "c$i"; done
+    git remote add origin "$tmp/remote.git"; git push -q -u origin main 2>/dev/null
+    for i in 3 4 5; do echo "$i" > "f$i"; git add .; git commit -qm "c$i"; done
+  )
+  cd "$tmp/p"
+  base="$(git rev-parse origin/main)"; ptip="$(git rev-parse HEAD)"
+  rm -rf "$tmp/g2"; mkdir "$tmp/g2"
+  echo "local" > "$tmp/g2/01-$(git rev-parse --short HEAD).txt"
+  ( squash "$tmp/p" "$tmp/g2" >/dev/null )
+  [ "$(git rev-parse HEAD^)" = "$base" ]                                  || { echo "FAIL squash did not sit on the upstream"; exit 1; }
+  [ "$(git rev-list --count HEAD)" = 3 ]                                  || { echo "FAIL pushed commits rewritten"; exit 1; }
+  [ "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$ptip^{tree}")" ]  || { echo "FAIL upstream tree"; exit 1; }
+  # a group ending at a pushed commit is refused and the branch stays put
+  git update-ref refs/heads/main "$ptip"; git reset -q --hard; git branch -q -D "backup/pre-squash-$(date +%Y%m%d)"
+  rm "$tmp/g2"/*.txt
+  echo "pushed" > "$tmp/g2/01-$(git rev-parse --short HEAD~3).txt"
+  echo "local"  > "$tmp/g2/02-$(git rev-parse --short HEAD).txt"
+  if ( squash "$tmp/p" "$tmp/g2" >/dev/null 2>&1 ); then echo "FAIL pushed group accepted"; exit 1; fi
+  [ "$(git rev-parse HEAD)" = "$ptip" ]                                   || { echo "FAIL branch moved on refusal"; exit 1; }
+  # --from-root is the explicit way to rebuild everything
+  ( squash "$tmp/p" "$tmp/g2" --from-root >/dev/null )
+  [ "$(git rev-list --count HEAD)" = 2 ]                                  || { echo "FAIL --from-root"; exit 1; }
   echo "selftest ok"
 }
 
 case "${1:-}" in
   --selftest) selftest ;;
-  "") echo "usage: squash-history.sh <repo> <groups-dir> | --selftest" >&2; exit 2 ;;
-  *) squash "$1" "${2:?groups-dir}" ;;
+  "") echo "usage: squash-history.sh <repo> <groups-dir> [--from-root] | --selftest" >&2; exit 2 ;;
+  *) case "${3:-}" in ""|--from-root) ;; *) echo "squash-history: unknown argument $3" >&2; exit 2 ;; esac
+     squash "$1" "${2:?groups-dir}" "${3:-}" ;;
 esac

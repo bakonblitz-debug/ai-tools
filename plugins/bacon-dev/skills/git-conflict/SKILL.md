@@ -1,7 +1,7 @@
 ---
 name: git-conflict
 description: >
-  Merge conflict, rebase conflict, conflicting changes, resolve conflicts, worktrees diverged, two agents touched the same file. Use when `git status` shows unmerged paths or a merge/rebase stops with markers. Not for ordinary review.
+  "merge conflict", "rebase conflict", "conflicting changes", "resolve conflicts", "worktrees diverged", "two agents touched the same file". Resolves merge and rebase conflicts, including the context repo's. Use when `git status` shows unmerged paths or a merge/rebase stops with markers. Not for ordinary review.
 ---
 
 # Git Conflict — Cross-Agent Conflict Resolution

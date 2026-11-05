@@ -119,7 +119,9 @@ check_harness_map_covers_files() {
   missing="" n=0
   for map in docs/harness-map.md docs/harness-map.html; do
     [ -f "$REPO/$map" ] || { missing="$missing $map(absent)"; continue; }
-    for f in $(git -C "$REPO" ls-files | grep -vE '^(LICENSE|\.gitignore|docs/harness-map\.(md|html))$'); do
+    # An app under tools/<name>/ has its own README and is mapped as one entry, its folder.
+    for f in $(git -C "$REPO" ls-files | grep -vE '^(LICENSE|\.gitignore|docs/harness-map\.(md|html))$' \
+               | sed -E 's|^(tools/[^/]+/).*|\1|' | sort -u); do
       n=$((n+1))
       grep -qF "$f" "$REPO/$map" || missing="$missing ${map##*.}:$f"
     done

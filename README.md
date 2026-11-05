@@ -35,7 +35,7 @@ bash ai-tools/scripts/health-check.sh
 
 Needs bash, python3 and git. No package installs.
 
-The installer asks a few questions, writes `.env`, and **merges** its hooks into `~/.claude/settings.json`: it backs the file up first, leaves your own hooks alone, and prints how to undo everything it did. Every prompt has a default, so run it in a terminal and read each question.
+The installer asks a few questions, writes `.env`, and **merges** its hooks into `~/.claude/settings.json`: it backs the file up first, leaves your own hooks alone, and prints how to undo everything it did. It refuses unknown flags, and without a terminal it refuses to run unless given `--yes` (take every default); `--help` shows the options.
 
 Then add the plugins inside a Claude Code session:
 

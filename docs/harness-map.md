@@ -108,11 +108,12 @@ ai-tools/
 │   └── skills/<name>/SKILL.md        one folder per skill
 ├── scripts/                          hook scripts, helpers and hand-run tools
 ├── bin/now                           on PATH, callable as `now`
+├── tools/observatory/                metrics dashboard, a self-contained app (own README)
 ├── config/delegation.yaml            tier → model sketch for the local agent (not live)
 ├── templates/                        task-spec, spike, launchd job
 ├── docs/                             this page, standards, runbooks, setup
 ├── .env.example                      every machine-local setting, documented
-└── README.md                         principles and the four-phase workflow
+└── README.md                         what the harness is, its commands, and the principles
 ```
 
 ---
@@ -174,7 +175,7 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 |---|---|---|
 | `scripts/health-check.sh` | Every harness check, one line each; SKIP means "cannot test from here", never failure. | `bash scripts/health-check.sh [-v] [name]` |
 | `scripts/clone-test.sh` | Clones the repo fresh and records what a stranger would hit. The installability gate. | `bash scripts/clone-test.sh` |
-| `scripts/install.py` | Wires hooks into someone else's `settings.json`: three opt-in groups, backup first, merge never overwrite. | `python3 scripts/install.py --dry-run` |
+| `scripts/install.py` | Wires hooks into someone else's `settings.json`: three opt-in groups, backup first, merge never overwrite. Refuses unknown flags, and refuses to run without a terminal unless given `--yes`. | `python3 scripts/install.py --dry-run` |
 | `scripts/context-check-monthly.sh` | Monthly proof that the generated indexes still work; a red run writes a handoff file. | launchd, from `templates/context-check.plist.example` |
 | `scripts/coding-mode.sh` | Turns coding mode on for a project folder: merges bacon-dev, ponytail and superpowers into its `.claude/settings.json` (other keys kept). `--check` lists what is missing. | `coding-mode.sh <dir> [--check]` |
 | `scripts/on-mac.sh` | Runs a command in a project folder on the Mac over ssh, keeping quoting and exit codes. | `on-mac.sh <project> <cmd…>` |
@@ -183,8 +184,9 @@ A skill is a Markdown file the model reads when a request matches its descriptio
 | `scripts/skilllog.py` | Optional run log for skill scripts: off until `skill.py log on`; per-machine files in `~/.claude/skill-logs/`, rolled at 1 MB. | `from skilllog import logger` |
 | `scripts/list-skills.py` | Generated skill listings from SKILL.md frontmatter: one plugin, or `--all` for every installed plugin. | `py.sh scripts/list-skills.py --all` |
 | `.githooks/pre-commit` | Blocks a commit that fails `skill.py lint`. On per clone with `git config core.hooksPath .githooks`. | git runs it |
-| `scripts/squash-history.sh` | Rewrites a branch into fewer commits by reusing each group's final tree, so content cannot change. | `squash-history.sh <repo> <groups-dir>` |
+| `scripts/squash-history.sh` | Rewrites a branch into fewer commits by reusing each group's final tree, so content cannot change. Starts from the upstream, so pushed commits are never rewritten; `--from-root` rebuilds everything. | `squash-history.sh <repo> <groups-dir> [--from-root]` |
 | `bin/now` | Today's date in every format used here, and how many days ago a date was. | `now`, `now 2026-08-11` |
+| `tools/observatory/` | Read-only dashboard over the session and usage metrics (`sessions.tsv`, `usage.tsv`) plus an OpenTelemetry receiver. A self-contained Next.js app in Docker with its own tests; its `README.md` lists its files, so the map names the folder only. | `make up`, then `localhost:3400` |
 
 ### Docs (`docs/`)
 

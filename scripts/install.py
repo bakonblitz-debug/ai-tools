@@ -8,7 +8,11 @@ The dangerous operation is the settings merge: a stranger's settings.json alread
 has their own hooks in it, and clobbering it is the worst thing this script can do.
 That is why merge_hooks() is a pure function with the selftest pointed at it.
 
-Usage: install.py [--selftest] [--dry-run]
+Usage: install.py [--dry-run] [--yes] [--harness-dir DIR] | --selftest | --help
+
+  --dry-run          show the plan, write nothing
+  --yes              take every default without asking (needed without a terminal)
+  --harness-dir DIR  write .env there instead of next to this script (for tests)
 """
 import datetime
 import json
@@ -20,6 +24,31 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent          # never derived from a detected root:
 HARNESS = HERE.parent                            # a script must find files next to it
+
+
+FLAGS = {"--dry-run", "--yes"}
+
+
+def parse_args(argv, isatty):
+    """('help', usage) | ('error', message) | ('run', None). Anything unknown stops the
+    run: this script edits settings.json, so a mistyped flag must never mean "go"."""
+    if any(a in ("-h", "--help") for a in argv):
+        return "help", __doc__
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--harness-dir":
+            if i + 1 >= len(argv) or argv[i + 1].startswith("-"):
+                return "error", "--harness-dir needs a directory"
+            i += 2
+            continue
+        if a not in FLAGS and not a.startswith("--harness-dir="):
+            return "error", f"unknown argument: {a}"
+        i += 1
+    if not isatty and "--dry-run" not in argv and "--yes" not in argv:
+        return "error", ("no terminal to ask questions on: run it in a terminal, "
+                         "or pass --yes to take every default")
+    return "run", None
 
 
 def harness_dir(argv):
@@ -214,6 +243,27 @@ def selftest():
     else:
         ok("hooks use python3 on POSIX, the py launcher (or this Python) on Windows")
 
+    # 9. A flag it does not know must stop it, and so must a missing terminal: on
+    #    2026-11-04 `install.py --help` over ssh ignored the flag, read EOF as "accept
+    #    every default", and wired hooks into the live settings.json.
+    cases = [
+        (["--help"], True, "help"),
+        (["-h"], True, "help"),
+        (["--bogus"], True, "error"),
+        (["--dry-run", "extra"], True, "error"),
+        (["--harness-dir"], True, "error"),
+        ([], False, "error"),
+        (["--dry-run"], False, "run"),
+        (["--yes"], False, "run"),
+        (["--dry-run", "--harness-dir", "/tmp/x"], True, "run"),
+        ([], True, "run"),
+    ]
+    wrong = [(a, t, parse_args(a, t)[0]) for a, t, want in cases if parse_args(a, t)[0] != want]
+    if wrong:
+        bad(f"argument handling wrong: {wrong}")
+    else:
+        ok("unknown flags and a missing terminal are refused; --help only prints usage")
+
     if fails:
         print(f"selftest FAILED ({len(fails)})")
         return 1
@@ -239,6 +289,9 @@ def detect_root():
 
 def ask(prompt, default=None, skippable=True):
     hint = f" [{default}]" if default else (" [skip]" if skippable else "")
+    if "--yes" in sys.argv[1:]:
+        print(f"{prompt}{hint}: (--yes)")
+        return default
     try:
         got = input(f"{prompt}{hint}: ").strip()
     except EOFError:
@@ -352,4 +405,13 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(selftest() if "--selftest" in sys.argv else main(sys.argv[1:]))
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(selftest())
+    verdict, text = parse_args(sys.argv[1:], sys.stdin.isatty())
+    if verdict == "help":
+        print(text.strip())
+        sys.exit(0)
+    if verdict == "error":
+        print(f"install.py: {text}\n\n{__doc__.strip()}", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(main(sys.argv[1:]))
