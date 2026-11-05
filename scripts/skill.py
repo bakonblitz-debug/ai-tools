@@ -38,6 +38,18 @@ SHELL_LANGS = {"bash", "sh", "shell", "zsh", "console"}
 SHELL_LOGIC = [(re.compile(r"\s\|\s"), "a pipe"), (re.compile(r"\$\("), "a $( ) substitution"),
                (re.compile(r";\s*do\b|\bdone\b\s*$|\bwhile\s"), "a loop")]
 
+# A plugin with this marker file is published for anyone: it may not carry one workspace's specifics.
+PUBLIC_MARK = "PUBLIC"
+PUBLIC_TEXT = {".md", ".py", ".json", ".sh", ".txt", ".toml", ".yaml", ".yml"}
+NOT_PUBLIC = [  # first match per line is reported; paths before words
+    (re.compile(r"~/www\b|/mnt/www\b|\bM:\\|/Users/\w+"), "a workspace path"),
+    (re.compile(r"\bssh mac\b|\bon-mac\.sh\b"), "ssh mac (one machine's setup)"),
+    (re.compile(r"\bai-tools\b|\bclaude-config\b|context/memory\b"), "a reference to the private harness"),
+    (re.compile(r"\b[Hh]ermes\b|\bOpenViking\b|\bLM ?Studio\b|\blmstudio\b"), "a local tool of one setup"),
+    (re.compile(r"\b(deepseek|gemma\d?|qwen[\d.]*|llama[\d.]*|devstral)\b", re.I), "a local model name"),
+    (re.compile(r"\b(he|his|him)\b"), "an owner pronoun (write for the user: you)"),
+]
+
 
 # ---- names -----------------------------------------------------------------------------------
 
@@ -100,12 +112,31 @@ def status_line(d):
 
 # ---- lint ------------------------------------------------------------------------------------
 
-def plugin_dirs(roots=None):
+def plugin_dirs(roots=None, claude=None):
+    """The plugins to lint: the given roots, else this checkout's plugins plus every installed
+    plugin that runs from a local clone. Claude's plugin cache is a copy, never linted or edited."""
     if roots:
         return [Path(r) for r in roots]
+    claude = Path(claude or ls.HOME / ".claude")
+    managed = (claude / "plugins").resolve()  # cache and GitHub marketplaces: Claude's copies
     out = sorted(p for p in (AI_TOOLS / "plugins").glob("*") if (p / ".claude-plugin" / "plugin.json").exists())
     cc = AI_TOOLS.parent / "projects" / "claude-config" / "plugin"
-    return out + ([cc] if (cc / ".claude-plugin" / "plugin.json").exists() else [])
+    out += [cc] if (cc / ".claude-plugin" / "plugin.json").exists() else []
+    names = {ls.rows(p)[0] for p in out}
+    seen = {p.resolve() for p in out}
+    for pdir, _ in ls.known_plugins(claude).values():
+        if pdir is None:
+            continue
+        r = pdir.resolve()
+        if r in seen or managed in r.parents:
+            continue
+        name = ls.rows(pdir)[0]
+        if name in names:  # another checkout of a plugin this one provides (a worktree's main)
+            continue
+        seen.add(r)
+        names.add(name)
+        out.append(pdir)
+    return out
 
 
 def code_spans(md):
@@ -154,6 +185,18 @@ def lint_plugin(pdir):
                 if rx.search(code):
                     add("fail", f"{md}:{n}", f"{what} in the skill text ({code.strip()[:60]}): put the logic in a script")
                     break
+    if (pdir / ".claude-plugin" / PUBLIC_MARK).exists():
+        for f in sorted(pdir.rglob("*")):
+            if not f.is_file() or f.suffix not in PUBLIC_TEXT or {".git", "__pycache__"} & set(f.parts):
+                continue
+            for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if "public-ok" in line:
+                    continue
+                for rx, what in NOT_PUBLIC:
+                    m = rx.search(line)
+                    if m:
+                        add("fail", f"{f}:{n}", f"public plugin: {what} ({m.group(0)}); generalise it, or end the line with public-ok")
+                        break
     return found
 
 
@@ -199,6 +242,48 @@ def selftest():
     skill("go", '"go now". Goes.', "Run `bash py.sh tool.py --x`.\n")
     got = lint([p])
     check([lvl for lvl, _, _ in got] == ["warn"], f"a clean plugin passes; an unquoted description only warns: {got}")
+
+    # a public plugin may not carry one workspace's specifics; a private one may
+    skill("go", '"go now". Goes.', "Plans go to ~/www/.plans and he decides.\nRun it for the user.\nhis example  <!-- public-ok -->\n")
+    (p / "hooks").mkdir()
+    (p / "hooks" / "h.sh").write_text("# runs over ssh mac\n")
+    check(not any("public plugin" in m for _, _, m in lint([p])), "a private plugin may name its workspace")
+    (p / ".claude-plugin" / PUBLIC_MARK).write_text("")
+    got = [(path, m) for _, path, m in lint([p]) if "public plugin" in m]
+    check(sum(path.endswith("go/SKILL.md:5") for path, _ in got) == 1
+          and any(path.endswith("go/SKILL.md:5") and "~/www" in m for path, m in got)
+          and any(path.endswith("h.sh:1") and "ssh mac" in m for path, m in got)
+          and not any(path.endswith("go/SKILL.md:6") or path.endswith("go/SKILL.md:7") for path, _ in got),
+          f"a public plugin fails on workspace paths, ssh mac and owner pronouns, one finding per line, public-ok exempts a line: {got}")
+    (p / ".claude-plugin" / PUBLIC_MARK).unlink()
+
+    # with no roots, lint covers plugins installed from a local clone, never the plugin cache
+    import json
+    m = t / "market"
+    (m / ".claude-plugin").mkdir(parents=True)
+    (m / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "loc", "source": "./"}]}))
+    (m / "skills" / "list").mkdir(parents=True)
+    c = t / ".claude"
+    cached = c / "plugins" / "cache" / "gh" / "remote" / "1.0"
+    (cached / "skills" / "list").mkdir(parents=True)
+    third = c / "plugins" / "marketplaces" / "third"
+    (third / ".claude-plugin").mkdir(parents=True)
+    (third / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "tp", "source": "./"}]}))
+    (third / "skills" / "list").mkdir(parents=True)
+    twin = t / "twin"  # another checkout of a plugin this checkout already provides
+    (twin / ".claude-plugin").mkdir(parents=True)
+    (twin / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "bacon", "source": "./"}]}))
+    (twin / ".claude-plugin" / "plugin.json").write_text('{"name": "bacon"}')
+    (twin / "skills" / "list").mkdir(parents=True)
+    (c / "plugins" / "known_marketplaces.json").write_text(json.dumps({
+        "mk": {"installLocation": str(m)}, "th": {"installLocation": str(third)}, "tw": {"installLocation": str(twin)}}))
+    (c / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {
+        "loc@mk": [{"installPath": str(c / "plugins" / "cache" / "mk" / "loc" / "1")}],
+        "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], "bacon@tw": [{}]}}))
+    (c / "settings.json").write_text("{}")
+    dirs = [d.resolve() for d in plugin_dirs(claude=c)]
+    check(m.resolve() in dirs and not {cached.resolve(), third.resolve(), twin.resolve()} & set(dirs),
+          f"a local-clone plugin is linted; cached, third-party marketplace and duplicate-name ones are not: {dirs}")
 
     d = t / "logs"
     known = {"bacon:greet", "plug:go", "other:go"}
