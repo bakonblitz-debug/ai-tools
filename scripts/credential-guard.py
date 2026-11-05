@@ -28,7 +28,10 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -316,9 +319,16 @@ def mask_text(text, label, cfg):
 # identifiers are allowed; just mask, no picker. Reliable classes and labelled fields mask
 # now. Unlabelled names and street addresses only go to a local review log for a week, so he
 # can see the false-positive rate before they mask anything (plan: .plans/handoff-pii-guard.md).
-PII_DIR = os.path.join(os.path.expanduser("~"), ".claude", "pii-guard")
+# The files sit in the harness, so every machine that runs this script from the share uses one
+# copy. config/pii-guard/ is git-ignored: ai-tools is public, and short values like a phone
+# number can be brute-forced back from a hash. The selftest fails if git would track them.
+PII_DIR = os.path.join(HERE, "..", "config", "pii-guard")
 SELF_FILE = os.path.join(PII_DIR, "self.json")      # sha256 of his own identifiers, never plain
-REVIEW_FILE = os.path.join(PII_DIR, "review.tsv")   # log-only hits, plain: Read-denied, local
+REVIEW_FILE = os.path.join(PII_DIR, "review.tsv")   # log-only hits, plain: Read-denied, git-ignored
+# Before 2026-11-05 each machine kept its own copy here; still read so no --add-self is lost.
+LEGACY_DIR = os.path.join(os.path.expanduser("~"), ".claude", "pii-guard")
+SELF_FILES = [SELF_FILE, os.path.join(LEGACY_DIR, "self.json")]
+REVIEW_FILES = [REVIEW_FILE, os.path.join(LEGACY_DIR, "review.tsv")]
 REVIEW = []
 
 _FILE_TLDS = set("png jpg jpeg gif svg webp ico css scss js mjs ts tsx jsx php json md txt lock yml yaml xml html vue py rb go rs sh".split())
@@ -370,12 +380,15 @@ def _hash(v):
     return hashlib.sha256(_norm(v).encode("utf-8")).hexdigest()
 
 
-def load_self():
-    try:
-        with open(SELF_FILE, encoding="utf-8") as f:
-            return set(json.load(f).get("sha256", []))
-    except (OSError, ValueError, AttributeError):
-        return set()
+def load_self(paths=None):
+    own = set()
+    for p in paths or SELF_FILES:
+        try:
+            with open(p, encoding="utf-8") as f:
+                own |= set(json.load(f).get("sha256", []))
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass
+    return own
 
 
 def _luhn(d):
@@ -526,18 +539,20 @@ def pii_review(clear=False):
     """Show the log-only hits (counts, then examples). Run by him, in his terminal."""
     _refuse_inside_claude()
     if clear:
-        try:
-            os.remove(REVIEW_FILE)
-        except FileNotFoundError:
-            pass
+        for p in REVIEW_FILES:
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
         print("cleared")
         return
     rows = []
-    try:
-        with open(REVIEW_FILE, encoding="utf-8") as f:
-            rows = [line.rstrip("\n").split("\t", 2) for line in f if line.count("\t") >= 2]
-    except FileNotFoundError:
-        pass
+    for p in REVIEW_FILES:
+        try:
+            with open(p, encoding="utf-8") as f:
+                rows += [line.rstrip("\n").split("\t", 2) for line in f if line.count("\t") >= 2]
+        except FileNotFoundError:
+            pass
     by = {}
     for _, cls, value in rows:
         by.setdefault(cls, []).append(value)
@@ -866,6 +881,26 @@ def selftest():
     m = stdout(bash_post("git log -1", "Author: Jane Roe <" + other + ">\n[exit 0]"))
     check("pii masked in tool output", other not in m and "Jane Roe" not in m, True)
     check("review file is a strict known file", names_known("~/.claude/pii-guard/review.tsv"), "pii-guard-files")
+    check("harness self file is a strict known file", names_known(SELF_FILE), "pii-guard-files")
+
+    # The PII files live in the harness (one copy for every machine), never in git.
+    check("pii dir in harness config", os.path.normpath(PII_DIR),
+          os.path.normpath(os.path.join(HERE, "..", "config", "pii-guard")))
+    for f in (SELF_FILE, REVIEW_FILE):
+        try:
+            r = subprocess.run(["git", "-C", HERE, "check-ignore", "-q", f], capture_output=True, timeout=10)
+            if r.returncode in (0, 1):  # 128: not a repo or git unusable here (SMB); nothing to check
+                check("git ignores " + os.path.basename(f), r.returncode, 0)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    tmp = tempfile.mkdtemp()
+    a, b = os.path.join(tmp, "a.json"), os.path.join(tmp, "b.json")
+    for p, hs in ((a, ["h1", "h2"]), (b, ["h2", "h3"])):
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"sha256": hs}, fh)
+    check("self list merges harness and legacy copies", load_self([a, b, os.path.join(tmp, "none.json")]),
+          {"h1", "h2", "h3"})
+    shutil.rmtree(tmp, ignore_errors=True)
 
     # Prompts.
     def prompt(text):

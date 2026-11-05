@@ -22,6 +22,11 @@ harness/
 # .env.example is the committed, generic template — this is not it.
 /.env
 
+# credential-guard's PII files: hashes of his own identifiers and the plain review log.
+# Shared by every machine through the share, never committed (hashes of short values can be
+# brute-forced back). The guard's selftest fails if git would track them.
+config/pii-guard/
+
 # Workspace folders that sit beside this repo. Ignored here so a copy or a
 # symlink of either can never be committed to the public repo.
 projects/
