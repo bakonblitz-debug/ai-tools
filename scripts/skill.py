@@ -116,7 +116,8 @@ def status_line(d):
 
 def plugin_dirs(roots=None, claude=None):
     """The plugins to lint: the given roots, else this checkout's plugins plus every installed
-    plugin that runs from a local clone. Claude's plugin cache is a copy, never linted or edited."""
+    plugin that runs from a local clone. Claude's plugin cache is a copy, never linted or edited,
+    and a clone under a vendor/ folder is someone else's plugin, so our rules don't apply to it."""
     if roots:
         return [Path(r) for r in roots]
     claude = Path(claude or ls.HOME / ".claude")
@@ -130,7 +131,7 @@ def plugin_dirs(roots=None, claude=None):
         if pdir is None:
             continue
         r = pdir.resolve()
-        if r in seen or managed in r.parents:
+        if r in seen or managed in r.parents or "vendor" in r.parts:
             continue
         name = ls.rows(pdir)[0]
         if name in names:  # another checkout of a plugin this one provides (a worktree's main)
@@ -278,15 +279,21 @@ def selftest():
     (twin / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": own, "source": "./"}]}))
     (twin / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": own}))
     (twin / "skills" / "list").mkdir(parents=True)
+    hm = t / "harness-market"  # a local marketplace that holds a vendor's clone under vendor/
+    (hm / ".claude-plugin").mkdir(parents=True)
+    (hm / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "vp", "source": "./vendor/vp"}]}))
+    vp = hm / "vendor" / "vp"
+    (vp / "skills" / "go").mkdir(parents=True)
     (c / "plugins" / "known_marketplaces.json").write_text(json.dumps({
-        "mk": {"installLocation": str(m)}, "th": {"installLocation": str(third)}, "tw": {"installLocation": str(twin)}}))
+        "mk": {"installLocation": str(m)}, "th": {"installLocation": str(third)}, "tw": {"installLocation": str(twin)},
+        "hv": {"installLocation": str(hm)}}))
     (c / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {
         "loc@mk": [{"installPath": str(c / "plugins" / "cache" / "mk" / "loc" / "1")}],
-        "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], own + "@tw": [{}]}}))
+        "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], own + "@tw": [{}], "vp@hv": [{}]}}))
     (c / "settings.json").write_text("{}")
     dirs = [d.resolve() for d in plugin_dirs(claude=c)]
-    check(m.resolve() in dirs and not {cached.resolve(), third.resolve(), twin.resolve()} & set(dirs),
-          f"a local-clone plugin is linted; cached, third-party marketplace and duplicate-name ones are not: {dirs}")
+    check(m.resolve() in dirs and not {cached.resolve(), third.resolve(), twin.resolve(), vp.resolve()} & set(dirs),
+          f"a local-clone plugin is linted; cached, third-party marketplace, vendor/ and duplicate-name ones are not: {dirs}")
 
     d = t / "logs"
     known = {"bacon:greet", "plug:go", "other:go"}
