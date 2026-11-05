@@ -128,6 +128,64 @@ def strip_prose(cmd):
     return re.sub(r"\b(?:echo|printf|Write-Output|Write-Host)\s+" + q, " ", cmd)
 
 
+# Only read-only commands are wrapped. Auto mode reviews a command before the hook runs and
+# refuses one the hook then changed (seen 2026-11-05), so wrapping a state-changing command
+# would bounce it once every time. Read-only commands skip that review, and they are the ones
+# that print secrets. Cost: a failing state-changing command's output is not masked.
+BASH_READERS = set("""cat head tail less more grep egrep fgrep rg ag ls tree wc sort uniq cut awk sed jq yq
+    env printenv echo printf type stat file diff cmp exit true false cd pwd test [ which command basename
+    dirname realpath readlink date uname whoami id hostname du df column tr xxd od strings nl tac fold""".split())
+GIT_READERS = set("diff show log status blame grep rev-parse ls-files describe shortlog cat-file ls-tree reflog".split())
+PS_READERS = set("""select-string test-path resolve-path measure-object sort-object select-object where-object
+    format-table format-list out-string convertfrom-json convertto-json write-output write-host echo cat type
+    gc ls dir gci sls findstr exit cd pwd""".split())
+_REDIRECT_OK = re.compile(r"\d?>&\d|\d?>\s*(?:/dev/null|\$null)")
+
+
+def _segment_reads(seg, shell):
+    seg = seg.strip().lstrip("(")
+    if not seg:
+        return True
+    if ">" in _REDIRECT_OK.sub("", seg):
+        return False  # writes a file
+    if shell == "powershell":
+        seg = re.sub(r"^\$\w+\s*=\s*", "", seg)
+    else:
+        seg = re.sub(r"^(?:\w+=\S*\s+)+", "", seg)  # VAR=x cmd
+    words = seg.split()
+    if not words:
+        return True
+    w0 = words[0].lower()
+    rest = words[1:]
+    if shell == "powershell":
+        return w0.startswith("get-") or w0 in PS_READERS
+    if w0 == "git":
+        i = 0
+        while i < len(rest) and rest[i].startswith("-"):
+            i += 2 if rest[i] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
+        sub = rest[i:i + 1]
+        rest = rest[i:]
+        if sub == ["config"]:
+            return any(f in rest for f in ("--get", "--list", "-l", "--get-all"))
+        return bool(sub) and sub[0] in GIT_READERS
+    if w0 == "docker":
+        sub = [w for w in rest if not w.startswith("-")][:2]
+        return bool(sub) and (sub[0] in ("logs", "inspect", "ps", "images", "version", "info")
+                              or (sub[0] == "compose" and sub[1:2] and sub[1] in ("config", "logs", "ps")))
+    if w0 == "php" and rest[:1] == ["artisan"]:
+        return rest[1:2] and rest[1] in ("config:show", "env", "route:list", "about", "--version")
+    if w0 == "sed":
+        return not any(w.startswith("-i") for w in rest)
+    if w0 == "find":
+        return not any(w in ("-delete", "-exec", "-execdir", "-ok") for w in rest)
+    return w0 in BASH_READERS
+
+
+def read_only(cmd, shell):
+    """True when every step of the command only reads."""
+    return all(_segment_reads(s, shell) for s in re.split(r"\|\||&&|[|;\n]", cmd))
+
+
 def load_config():
     try:
         with open(CONFIG, encoding="utf-8") as f:
@@ -142,7 +200,7 @@ def _allowed(cfg, label):
 
 def _placeholder(v):
     lv = v.lower()
-    return (not v or lv in PLACEHOLDERS or v[0] in "<${%[(*=>!&|" or v.isdigit()
+    return (not v or lv in PLACEHOLDERS or v[0] in "<${%[(*=>!&|`" or v.isdigit()
             or re.fullmatch(r"[x*.#-]+", lv) is not None or lv.startswith(("your", "change", "example"))
             or "{{" in v)
 
@@ -270,9 +328,10 @@ def handle(event, cfg):
     if ev == "PreToolUse":
         if not isinstance(cmd, str):
             return None
-        if tool == "Bash" and not cmd.startswith(WRAP_BASH):
+        if tool == "Bash" and not cmd.startswith(WRAP_BASH) and read_only(cmd, "bash"):
             return {"hookSpecificOutput": {"hookEventName": ev, "updatedInput": dict(ti, command=WRAP_BASH + cmd)}}
-        if tool == "PowerShell" and not (cmd.startswith(PS_HEAD) and cmd.endswith(PS_TAIL)):
+        if tool == "PowerShell" and not (cmd.startswith(PS_HEAD) and cmd.endswith(PS_TAIL)) \
+                and read_only(cmd, "powershell"):
             return {"hookSpecificOutput": {"hookEventName": ev,
                                            "updatedInput": dict(ti, command=PS_HEAD + cmd + PS_TAIL)}}
         return None
@@ -384,6 +443,21 @@ def selftest():
     check("ps wrap", out["hookSpecificOutput"]["updatedInput"]["command"], PS_HEAD + "Get-ChildItem" + PS_TAIL)
     check("ps already wrapped", ev("PreToolUse", "PowerShell", {"command": PS_HEAD + "x" + PS_TAIL}), None)
     check("read pre silent", ev("PreToolUse", "Read", {"file_path": envp}), None)
+    for c in ["cat " + envp, "grep -rn x . | head -5", "git log --oneline -3", "env | sort", "cd a && cat b",
+              "cat x; exit 3", "git config --get user.email", "docker compose config", "sed -n 1,5p f",
+              "php artisan config:show database", "cat x 2>&1", "grep x f >/dev/null", "DEBUG=1 printenv",
+              "git -C /repo show HEAD:a.txt", "[ -f x ]; echo $?"]:
+        check("wraps " + c, read_only(c, "bash"), True)
+    for c in ["git worktree add x main", "git commit -m 'a'", "rm " + envp, "cat a > b", "echo x >> f",
+              "sed -i s/a/b/ f", "ssh mac 'cat x'", "npm install", "find . -delete", "cp a b",
+              "git config user.name x", "docker run img", "php artisan migrate", "bash x.sh", "py -3 x.py"]:
+        check("leaves " + c, read_only(c, "bash"), False)
+        check("bash pre leaves " + c, ev("PreToolUse", "Bash", {"command": c}), None)
+    for c in ["Get-Content x", "Get-ChildItem | Select-Object Name", "(Select-String -Path f -Pattern x).Count",
+              "$e = Get-WinEvent -MaxEvents 5", "Get-Content f | Where-Object { $_ -match 'x' }"]:
+        check("ps wraps " + c, read_only(c, "powershell"), True)
+    for c in ["Remove-Item x", "py -3 x.py", "Set-Content x y", "Get-Content a > b", "ssh mac 'ls'"]:
+        check("ps leaves " + c, read_only(c, "powershell"), False)
 
     # Known credential files: values off the allow-list masked, key names kept.
     m = stdout(bash_post(WRAP_BASH + "cat " + sp_unix,
@@ -463,7 +537,8 @@ def selftest():
                  "self.token = token", "api_key = get_key()", "password = hashed_pw", "MAIL_PASSWORD=null",
                  "DB_PASSWORD=${DB_PASSWORD}", "author: Jane", "PATH=/usr/bin:/bin", "primary_key=True",
                  "'foreign_key' => 'user_id',", "https://github.com/x/y", "DB_PASSWORD=",
-                 "process.env.API_TOKEN", "sk-navigation-menu-wrapper-item", "url: https://example.com:8080/a"]:
+                 "process.env.API_TOKEN", "sk-navigation-menu-wrapper-item", "url: https://example.com:8080/a",
+                 "`PASSWORD=`-style lines", "set `TOKEN=` in the docs"]:
         check("no false positive: " + code, scan(code), (code, 0))
 
     # Other tools keep their own output shape.
@@ -536,4 +611,6 @@ if __name__ == "__main__":
         except Exception as e:  # a crash is a red test, not a traceback
             print("FAIL selftest crashed: %s %s" % (type(e).__name__, e))
             sys.exit(1)
-    sys.stdout.write(run(sys.stdin.read()))
+    # Bytes in, ASCII out: the hook's JSON is UTF-8, and Windows would decode stdin as cp1252
+    # (seen 2026-11-05: a masked Read turned "…" into mojibake). json.dumps escapes non-ASCII.
+    sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8", "replace")))
