@@ -24,10 +24,12 @@ Usage: credential-guard.py          (hook; event read from stdin)
        credential-guard.py --selftest
 """
 import copy
+import hashlib
 import json
 import os
 import re
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "config", "credential-guard.json")
@@ -60,6 +62,7 @@ KNOWN = [
     ("gcloud-credentials", r"(?:application_default_|\b)credentials\.json\b|service[-_]account[\w.-]*\.json\b", False),
     ("kubeconfig", r"\.kube[\\/]config\b", False),
     ("wp-config", r"wp-config\.php\b", False),
+    ("pii-guard-files", r"pii-guard[\\/](?:review\.tsv|self\.json)", True),
 ]
 _KNOWN = [(label, re.compile(p, re.I), strict) for label, p, strict in KNOWN]
 _STRICT = {label for label, _, strict in KNOWN if strict}
@@ -104,8 +107,8 @@ PLACEHOLDERS = {"null", "none", "nil", "true", "false", "undefined", "string", "
 MASKED = ("credential-guard: %d value%s withheld (%s); key names kept. To show a key's value, "
           "he adds it to ai-tools/config/credential-guard.json.")
 NOTE = "[credential-guard: %d value%s withheld (%s)]"
-PROMPT_BLOCK = ("credential-guard: this prompt looks like it holds %d secret value%s, so it was not "
-                "sent. Remove them, or start the prompt with secret-ok to send it as it is.")
+PROMPT_BLOCK = ("credential-guard: this prompt looks like it holds %d secret or personal value%s, so it "
+                "was not sent. Remove them, or start the prompt with pii-ok (or secret-ok) to send it as it is.")
 FAILED = "credential-guard: output withheld (internal error)."
 
 
@@ -189,9 +192,11 @@ def read_only(cmd, shell):
 def load_config():
     try:
         with open(CONFIG, encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
     except FileNotFoundError:
-        return {"allow": {}}
+        cfg = {"allow": {}}
+    cfg["self"] = load_self()
+    return cfg
 
 
 def _allowed(cfg, label):
@@ -299,9 +304,250 @@ def mask_text(text, label, cfg):
             if label:
                 line, k = _mask_file_line(line, label, cfg)
         line, k2 = scan_line(line)
+        line, k3 = pii_line(line, cfg)
         out.append(line)
-        n += k + k2
+        n += k + k2 + k3
     return "\n".join(out), n
+
+
+# ---------------------------------------------------------------- PII
+# His rules (2026-11-05): mask anything that identifies a person (names, addresses, phones,
+# emails, SIN/SSN, cards, bank accounts); gender, age and descriptions are fine; his own
+# identifiers are allowed; just mask, no picker. Reliable classes and labelled fields mask
+# now. Unlabelled names and street addresses only go to a local review log for a week, so he
+# can see the false-positive rate before they mask anything (plan: .plans/handoff-pii-guard.md).
+PII_DIR = os.path.join(os.path.expanduser("~"), ".claude", "pii-guard")
+SELF_FILE = os.path.join(PII_DIR, "self.json")      # sha256 of his own identifiers, never plain
+REVIEW_FILE = os.path.join(PII_DIR, "review.tsv")   # log-only hits, plain: Read-denied, local
+REVIEW = []
+
+_FILE_TLDS = set("png jpg jpeg gif svg webp ico css scss js mjs ts tsx jsx php json md txt lock yml yaml xml html vue py rb go rs sh".split())
+# Role addresses name a team, not a person (cve-watch: secure@, psirt@ ...).
+_EMAIL_SKIP_LOCAL = {"git", "noreply", "no-reply", "donotreply", "do-not-reply", "postmaster", "mailer-daemon",
+                     "security", "secure", "psirt", "cna", "support", "help", "info", "contact", "hello", "admin",
+                     "sales", "team", "privacy", "legal", "abuse", "webmaster", "press", "jobs", "careers", "hr",
+                     "billing", "office", "bugs", "notifications"}
+_EMAIL_SKIP_DOMAIN = ("example.com", "example.org", "example.net", "example", "test", "invalid", "localhost",
+                      "local", "noreply.github.com")
+EMAIL = re.compile(r"(?<![\w.+-])([A-Za-z0-9._%+-]+)@((?:[A-Za-z0-9-]+\.)+([A-Za-z]{2,24}))(?![\w-])")
+NAME_EMAIL = re.compile(r"([A-Z][A-Za-zÀ-ÿ'’.-]+(?: [A-Z][A-Za-zÀ-ÿ'’.-]+){1,3})(\s*<\s*)"
+                        r"([A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,24})(\s*>)")
+PHONE = re.compile(r"(?<![\w+.-])(?:\+?1[ .-]?)?(?:\(\d{3}\) ?\d{3}[ .-]\d{4}|\d{3}-\d{3}-\d{4}|\d{3}\.\d{3}\.\d{4})(?![\w.]|-\d)")
+PHONE_INTL = re.compile(r"(?<=[\s:=(\"'])\+[1-9]\d{0,2}(?:[ .-]?\d{1,4}){2,6}(?![\w.-])")
+SIN = re.compile(r"(?<![\w.-])\d{3}([ -])\d{3}\1\d{3}(?![\w.-])")  # not SVG/number data: 178.936 392.4
+SIN_CTX = re.compile(r"(?i)\b(?:sin|nas|social insurance(?: number)?)\b[^\d\n]{0,20}(\d{9})(?!\d)")
+SSN = re.compile(r"(?<![\d-])(\d{3})-(\d{2})-(\d{4})(?![\d-])")
+SSN_CTX = re.compile(r"(?i)\b(?:ssn|social security(?: number)?)\b[^\d\n]{0,20}(\d{9})(?!\d)")
+# Real card layouts only: bare, 4-4-4-4(-1..3), Amex 4-6-5 (not runs like "7 8 8 9 8 6" in data)
+CARD = re.compile(r"(?<![\w.-])(?:\d{13,19}|\d{4}([ -])\d{4}\1\d{4}\1\d{4}(?:\1\d{1,3})?|\d{4}([ -])\d{6}\2\d{5})(?![\w.-])")
+IBAN = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b")
+BANK_CTX = re.compile(r"(?i)\b(?:account|acct|compte|folio|transit|institution|routing|aba)\b"
+                      r"(?:[ _-]?(?:no\.?|number|num|#|n°|numéro|id))?[\"']?\s*(?:=>|[:=#])?\s*[\"']?(\d[\d -]{3,20}\d)(?!\d)")
+CHEQUE = re.compile(r"(?<![\d-])\d{5}-\d{3}-\d{5,12}(?![\d-])")
+POSTAL_CA = re.compile(r"(?<![A-Za-z0-9])[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]\d[ABCEGHJ-NPRSTV-Z]\d(?![A-Za-z0-9])")
+ZIP_STATE = re.compile(r"\b(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|"
+                       r"S[CD]|T[NX]|UT|V[AT]|W[AIVY]),?\s+(\d{5}(?:-\d{4})?)\b")
+_PERSON_KEYS = (r"(?:first|last|full|given|family|middle|maiden|customer|contact|client|employee|candidate|"
+                r"recipient|sender|display)[ _-]?name|firstname|lastname|fullname|surname|pr[ée]nom|nom")
+_ADDRESS_KEYS = (r"(?:home|work|billing|shipping|mailing|street|postal)?[ _-]?address(?:[ _-]?(?:line)?[ _-]?\d)?"
+                 r"|street|adresse|rue|postal[ _-]?code|postcode|zip(?:[ _-]?code)?|code[ _-]?postal")
+KEYED = [("name", re.compile(r"""(?<![\w-])(["']?)(""" + _PERSON_KEYS + r""")(?![\w-])\1(\s*(?:=>|[:=])\s*)(["'])([^"'\n]{1,80})\4""", re.I)),
+         ("address", re.compile(r"""(?<![\w-])(["']?)(""" + _ADDRESS_KEYS + r""")(?![\w-])\1(\s*(?:=>|[:=])\s*)(["'])([^"'\n]{1,120})\4""", re.I))]
+KEYED_BARE = [("name", re.compile(r"^(\s*(?:[+-]\s*)?)(" + _PERSON_KEYS + r")(\s*[:=]\s*)([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’. -]{0,60}?)\s*$", re.I)),
+              ("address", re.compile(r"^(\s*(?:[+-]\s*)?)(" + _ADDRESS_KEYS + r")(\s*[:=]\s*)([^\s\"'][^\"'\n]{2,120}?)\s*$", re.I))]
+STREET = re.compile(r"\b\d{1,6}(?:-\d{1,6})?,?\s+(?:(?:rue|chemin|boulevard|boul\.?|avenue|av\.?)\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.-]+"
+                    r"(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.-]+){0,3}|(?:[A-Z][\w'’.-]*\s+){1,4}(?:Street|St|Avenue|Ave|Road|Rd|"
+                    r"Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl|Crescent|Cres|Terrace|Highway|Hwy|Parkway|Circle)\b\.?)")
+GENERIC_NAME = re.compile(r"""(["']?)(name|author|owner|contact|user|full_name)\1(\s*(?:=>|[:=])\s*)(["'])"""
+                          r"""([A-Z][a-zà-ÿ'’-]+(?: [A-Z][a-zà-ÿ'’-]+){1,3})\4""")
+
+
+def _norm(v):
+    return re.sub(r"\s+", " ", v.strip().lower())
+
+
+def _hash(v):
+    return hashlib.sha256(_norm(v).encode("utf-8")).hexdigest()
+
+
+def load_self():
+    try:
+        with open(SELF_FILE, encoding="utf-8") as f:
+            return set(json.load(f).get("sha256", []))
+    except (OSError, ValueError, AttributeError):
+        return set()
+
+
+def _luhn(d):
+    total = 0
+    for i, c in enumerate(reversed(d)):
+        n = int(c)
+        if i % 2:
+            n = n * 2 - 9 if n > 4 else n * 2
+        total += n
+    return total % 10 == 0
+
+
+def _card_ok(m):
+    d = re.sub(r"\D", "", m.group(0))
+    if not 13 <= len(d) <= 19 or not _luhn(d):
+        return False
+    return (d[0] == "4" or 51 <= int(d[:2]) <= 55 or 2221 <= int(d[:4]) <= 2720 or d[:2] in ("34", "37", "65", "35")
+            or d[:4] == "6011")
+
+
+def _iban_ok(m):
+    s = m.group(0).replace(" ", "")
+    if not 15 <= len(s) <= 34:
+        return False
+    return int("".join(str(int(c, 36)) for c in s[4:] + s[:4])) % 97 == 1
+
+
+def _phone_ok(m):
+    d = re.sub(r"\D", "", m.group(0))[-10:]
+    return len(d) == 10 and d[0] in "23456789" and d[3] in "23456789"
+
+
+def _email_ok(m, own):
+    local, domain, tld = m.group(1).lower(), m.group(2).lower(), m.group(3).lower()
+    return not (local in _EMAIL_SKIP_LOCAL or tld in _FILE_TLDS or _hash(m.group(0)) in own
+                or any(domain == s or domain.endswith("." + s) for s in _EMAIL_SKIP_DOMAIN))
+
+
+def _ssn_ok(m):
+    a, g, s = m.group(1), m.group(2), m.group(3)
+    return a not in ("000", "666") and a[0] != "9" and g != "00" and s != "0000"
+
+
+def _keyed_ok(cls, v):
+    v = v.strip()
+    if not v or _placeholder(v) or "|" in v or re.fullmatch(r"[a-z]+(?:[_.-][a-z]+)*", v):
+        return False
+    if cls == "name":
+        return re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’. -]{0,60}", v) is not None
+    if not re.search(r"[A-Za-zÀ-ÿ]", v):
+        return False  # an IP, a number: not a street address
+    return bool(re.search(r"\d", v)) or len(v.split()) >= 2
+
+
+def pii_line(line, cfg):
+    """(line with PII masked, how many). Log-only classes go to REVIEW, not masked."""
+    own = cfg.get("self") or set()
+    spans = []  # (start, end, tag)
+
+    def free(a, b):
+        return all(b <= s or a >= e for s, e, _ in spans)
+
+    for m in NAME_EMAIL.finditer(line):
+        if _hash(m.group(1)) not in own and _hash(m.group(3)) not in own:
+            spans.append(m.span(1) + ("<name>",))
+    for cls, rx in KEYED:
+        for m in rx.finditer(line):
+            if _keyed_ok(cls, m.group(5)) and _hash(m.group(5)) not in own and free(*m.span(5)):
+                spans.append(m.span(5) + ("<%s>" % cls,))
+    for cls, rx in KEYED_BARE:
+        m = rx.match(line)
+        if m and _keyed_ok(cls, m.group(4)) and _hash(m.group(4)) not in own and free(*m.span(4)):
+            spans.append(m.span(4) + ("<%s>" % cls,))
+    checks = [
+        (EMAIL, 0, "<email>", lambda m: _email_ok(m, own)),
+        (IBAN, 0, "<iban>", _iban_ok),
+        (CARD, 0, "<card>", _card_ok),
+        (SSN, 0, "<ssn>", _ssn_ok),
+        (SSN_CTX, 1, "<ssn>", lambda m: True),
+        (SIN, 0, "<sin>", lambda m: m.group(0)[0] not in "08" and _luhn(re.sub(r"\D", "", m.group(0)))),
+        (SIN_CTX, 1, "<sin>", lambda m: _luhn(m.group(1))),
+        (CHEQUE, 0, "<bank-account>", lambda m: True),
+        (BANK_CTX, 1, "<bank-account>", lambda m: 5 <= len(re.sub(r"\D", "", m.group(1))) <= 17),
+        (PHONE, 0, "<phone>", lambda m: _phone_ok(m) and _hash(m.group(0)) not in own),
+        (PHONE_INTL, 0, "<phone>", lambda m: 8 <= len(re.sub(r"\D", "", m.group(0))) <= 15 and _hash(m.group(0)) not in own),
+        (POSTAL_CA, 0, "<postal-code>", lambda m: True),
+        (ZIP_STATE, 1, "<postal-code>", lambda m: True),
+    ]
+    for rx, grp, tag, ok in checks:
+        for m in rx.finditer(line):
+            a, b = m.span(grp)
+            if "<" in line[a:b] or not free(a, b) or not ok(m):
+                continue
+            spans.append((a, b, tag))
+    for m in STREET.finditer(line):
+        if free(*m.span()):
+            REVIEW.append(("street", m.group(0)))
+    for m in GENERIC_NAME.finditer(line):
+        if free(*m.span(5)) and _hash(m.group(5)) not in own:
+            REVIEW.append(("name", m.group(5)))
+    for a, b, tag in sorted(spans, reverse=True):
+        line = line[:a] + tag + line[b:]
+    return line, len(spans)
+
+
+def flush_review():
+    """Append this run's log-only hits to the local review file. Never fails the hook."""
+    global REVIEW
+    rows, REVIEW = REVIEW, []
+    if not rows:
+        return
+    try:
+        os.makedirs(PII_DIR, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with open(REVIEW_FILE, "a", encoding="utf-8") as f:
+            for cls, value in rows:
+                f.write("%s\t%s\t%s\n" % (stamp, cls, re.sub(r"[\t\r\n]+", " ", value)))
+    except OSError:
+        pass
+
+
+def _refuse_inside_claude():
+    if os.environ.get("CLAUDECODE"):
+        print("Refused: run this in your own terminal, not through Claude Code (its output would reach the model).")
+        sys.exit(2)
+
+
+def add_self():
+    """Store the hash of one of his own identifiers. Run by him, in his terminal."""
+    _refuse_inside_claude()
+    own = load_self()
+    print("Type a value that identifies you (full name, first name, last name, email, phone); blank line to stop.")
+    while True:
+        try:
+            v = input("> ")
+        except EOFError:
+            break
+        if not v.strip():
+            break
+        own.add(_hash(v))
+    os.makedirs(PII_DIR, exist_ok=True)
+    with open(SELF_FILE, "w", encoding="utf-8") as f:
+        json.dump({"sha256": sorted(own)}, f, indent=1)
+    print("%d value(s) stored as hashes in %s" % (len(own), SELF_FILE))
+
+
+def pii_review(clear=False):
+    """Show the log-only hits (counts, then examples). Run by him, in his terminal."""
+    _refuse_inside_claude()
+    if clear:
+        try:
+            os.remove(REVIEW_FILE)
+        except FileNotFoundError:
+            pass
+        print("cleared")
+        return
+    rows = []
+    try:
+        with open(REVIEW_FILE, encoding="utf-8") as f:
+            rows = [line.rstrip("\n").split("\t", 2) for line in f if line.count("\t") >= 2]
+    except FileNotFoundError:
+        pass
+    by = {}
+    for _, cls, value in rows:
+        by.setdefault(cls, []).append(value)
+    if not by:
+        print("nothing logged yet")
+    for cls, values in sorted(by.items()):
+        uniq = sorted(set(values))
+        print("%s: %d hits, %d distinct. Real person (y) or false positive (n)?" % (cls, len(values), len(uniq)))
+        for v in uniq[:40]:
+            print("   " + v)
 
 
 def _plural(n):
@@ -315,9 +561,10 @@ def handle(event, cfg):
 
     if ev == "UserPromptSubmit":
         prompt = event.get("prompt")
-        if not isinstance(prompt, str) or prompt.lstrip().lower().startswith("secret-ok"):
+        if not isinstance(prompt, str) or prompt.lstrip().lower().startswith(("secret-ok", "pii-ok")):
             return None
-        n = sum(scan_line(line)[1] for line in prompt.split("\n"))
+        n = sum(scan_line(line)[1] + pii_line(line, cfg)[1] for line in prompt.split("\n"))
+        del REVIEW[:]  # a prompt's log-only hits are his own text: not logged
         return {"decision": "block", "reason": PROMPT_BLOCK % (n, _plural(n))} if n else None
 
     ti = event.get("tool_input") or {}
@@ -350,18 +597,18 @@ def handle(event, cfg):
                 n += k
         if not n:
             return None
-        new["stdout"] = MASKED % (n, _plural(n), label or "secrets") + "\n" + new.get("stdout", "")
+        new["stdout"] = MASKED % (n, _plural(n), label or "secrets/PII") + "\n" + new.get("stdout", "")
     elif tool == "Read" and isinstance(resp, dict) and isinstance((resp.get("file") or {}).get("content"), str):
         label = names_known(ti.get("file_path"))
         content, n = mask_text(resp["file"]["content"], label, cfg)
         if not n:
             return None
-        new["file"]["content"] = content + "\n" + NOTE % (n, _plural(n), label or "secrets")
+        new["file"]["content"] = content + "\n" + NOTE % (n, _plural(n), label or "secrets/PII")
     elif tool == "Grep" and isinstance(resp, dict) and isinstance(resp.get("content"), str):
         content, n = mask_text(resp["content"], None, cfg)
         if not n:
             return None
-        new["content"] = content + "\n" + NOTE % (n, _plural(n), "secrets")
+        new["content"] = content + "\n" + NOTE % (n, _plural(n), "secrets/PII")
     else:
         return None
     return {"hookSpecificOutput": {"hookEventName": ev, "updatedToolOutput": new}}
@@ -393,8 +640,13 @@ def run(raw, load=None):
         return ""
     try:
         out = handle(event, (load or load_config)())
+        if load is None:
+            flush_review()
+        else:
+            del REVIEW[:]
         return json.dumps(out) if out else ""
     except Exception:
+        del REVIEW[:]
         if event.get("hook_event_name") == "PostToolUse":
             return json.dumps(_failed(event))
         return ""
@@ -557,6 +809,64 @@ def selftest():
     check("powershell masked", "<withheld>" in m and blob not in m, True)
     check("unrelated untouched", bash_post("cat notes.txt", "hello\nAPP_ENV=local\n[exit 0]\n"), None)
 
+    # PII: masked, except his own identifiers; descriptive attributes stay.
+    other = "jane.roe" + "@" + "corp.io"
+    me = "sam.tester" + "@" + "mail.io"
+    cfg["self"] = {_hash(me), _hash("Sam Tester"), _hash("514-555-0100")}
+
+    def complete(p):
+        return next(p + c for c in "0123456789" if _luhn(p + c))
+    sin = complete("13045428")
+    card = "4111" + " 1111" * 3
+    pii = {
+        "email": ("write to " + other, "<email>"),
+        "phone dashed": ("call 514-555-0199 now", "<phone>"),
+        "phone parens": ("(514) 555-0199", "<phone>"),
+        "phone +1": ("cell: +1 514 555 0199", "<phone>"),
+        "phone intl": ("tel: +33 6 12 34 56 78", "<phone>"),
+        "sin": ("SIN " + sin[:3] + " " + sin[3:6] + " " + sin[6:], "<sin>"),
+        "sin context": ("NAS: " + sin, "<sin>"),
+        "ssn": ("ssn 123-45-6789", "<ssn>"),
+        "card": ("paid with " + card, "<card>"),
+        "card bare": ("cc=" + card.replace(" ", ""), "<card>"),
+        "iban": ("IBAN GB82 " + "WEST 1234 5698 7654 32", "<iban>"),
+        "bank account": ("account number: 1234567", "<bank-account>"),
+        "compte": ("Compte: 12345 678", "<bank-account>"),
+        "cheque": ("transit 12345-003-1234567", "<bank-account>"),
+        "postal ca": ("Montréal, QC H2X 1Y4", "<postal-code>"),
+        "zip": ("New York, NY 10001", "<postal-code>"),
+        "first name": ("'first_name' => 'Jane',", "<name>"),
+        "first name bare": ("first_name: Jane", "<name>"),
+        "address": ("'address' => '123 Main Street',", "<address>"),
+        "name and email": ("Author: Jane Roe <" + other + ">", "Author: <name> <<email>>"),
+    }
+    for name, (text, want) in pii.items():
+        got, n = pii_line(text, cfg)
+        check("pii " + name, (want in got, n >= 1), (True, True))
+    for text in ["Author: Sam Tester <" + me + ">", "mail " + me, "call 514-555-0100", "git@github.com:x/y.git",
+                 "logo user@2x.png", "vue@3.4.0", "noreply@anthropic.com", "a@example.com",
+                 "report to secure" + "@" + "corp.io", "admin" + "@" + "budgetapp.local", "2026-11-05",
+                 "192.168.100.200", "123-456-7890", "v1.2.3 at 10:30:45", "sin " + sin[:-1] + str((int(sin[-1]) + 1) % 10),
+                 "000-12-3456", "4111111111111111ab", "card 4111" + " 1111" * 2 + " 1112",
+                 "id " + sin[:3] + " " + sin[3:6] + " " + sin[6:8] + str((int(sin[-1]) + 1) % 10), "ts 1730800000000", "account_id = 42",
+                 "'first_name' => 'required|string|max:255',", '"name": "my-app"', "$table->string('first_name');",
+                 "'address' => 'required',", "ip_address = '10.0.0.1'", "remote_address = 'gw host 12b'", "username: bob", "gender: female", "age: 34",
+                 "first_name: fake()->firstName()", "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+                 '<path d="M234.936 400.8C204.136 400.8 178.936 392.4 159.336 375.6C140.136 358.8"',
+                 "8477951,20252026,82,74,46,0.561,8,2025-10-15,33,streaky,7 8 8 9 8 6 8 9 7 7 6 6 6 6 7 9 8 9",
+                 "rule family=\"ipv4\" source address=\"10.0.0.12\" service name=\"ssh\""]:
+        check("pii kept: " + text, pii_line(text, cfg), (text, 0))
+    del REVIEW[:]
+    check("street log-only", pii_line("lives at 42 Wallaby Way, Sydney", cfg)[1], 0)
+    check("street logged", [c for c, _ in REVIEW], ["street"])
+    del REVIEW[:]
+    pii_line('"name": "Jane Roe"', cfg)
+    check("generic name logged, not masked", [c for c, _ in REVIEW], ["name"])
+    del REVIEW[:]
+    m = stdout(bash_post("git log -1", "Author: Jane Roe <" + other + ">\n[exit 0]"))
+    check("pii masked in tool output", other not in m and "Jane Roe" not in m, True)
+    check("review file is a strict known file", names_known("~/.claude/pii-guard/review.tsv"), "pii-guard-files")
+
     # Prompts.
     def prompt(text):
         return handle({"hook_event_name": "UserPromptSubmit", "prompt": text}, cfg)
@@ -564,6 +874,9 @@ def selftest():
     check("prompt blocked", (p or {}).get("decision") == "block" and "a1B2" not in json.dumps(p), True)
     check("prompt secret-ok", prompt("secret-ok gh" + "p_" + "a1B2" * 9), None)
     check("prompt plain", prompt("fix the DB_PASSWORD= line in .e" + "nv"), None)
+    check("prompt pii blocked", (prompt("call 514-555-0199 for me") or {}).get("decision"), "block")
+    check("prompt pii-ok", prompt("pii-ok call 514-555-0199 for me"), None)
+    check("prompt own email", prompt("my email is " + me), None)
 
     # The known-file list.
     for p in [envp + ".example", "backend/.e" + "nv.local", "./.e" + "nv", "~/.e" + "nvrc", envp + "-backup",
@@ -611,6 +924,10 @@ if __name__ == "__main__":
         except Exception as e:  # a crash is a red test, not a traceback
             print("FAIL selftest crashed: %s %s" % (type(e).__name__, e))
             sys.exit(1)
+    if sys.argv[1:] == ["--add-self"]:
+        sys.exit(add_self())
+    if sys.argv[1:2] == ["--pii-review"]:
+        sys.exit(pii_review(clear=sys.argv[2:] == ["--clear"]))
     # Bytes in, ASCII out: the hook's JSON is UTF-8, and Windows would decode stdin as cp1252
     # (seen 2026-11-05: a masked Read turned "…" into mojibake). json.dumps escapes non-ASCII.
     sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8", "replace")))
