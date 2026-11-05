@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Pre-commit check for the damage an edit over the M: share does to a file.
+"""Pre-commit check for the damage a file takes when it is edited through a network share.
 
-A file written from the PC through the SMB share loses its Unix exec bit
-(100755 becomes 100644) and can come back with CRLF line endings. Both slip
-into a commit unnoticed (ai-tools 1d141ee, and twice on 2026-10-30). This
-refuses the commit and names the fix.
+A file written from Windows through an SMB share loses its Unix exec bit
+(100755 becomes 100644) and can come back with CRLF line endings; a script
+created that way starts life without its exec bit. All of it slips into a
+commit unnoticed. This refuses the commit and names the fix:
+  - a tracked file that goes from 100755 to 100644
+  - a new file whose first line is #! but is staged as 100644
+  - a text file with CRLF line endings
 
     commit-guard.py [REPO]     check what is staged in REPO (default: here)
     commit-guard.py --selftest
@@ -44,6 +47,8 @@ def problems(repo):
             found.append(f"{path}: lost its exec bit (100755 -> 100644). Fix: " + EXEC_FIX.format(p=path))
         if new in ("100644", "100755"):
             data = git(repo, "show", f":{path}")
+            if old == "000000" and new == "100644" and data.startswith(b"#!"):
+                found.append(f"{path}: is a new script (#! first line) without its exec bit. Fix: " + EXEC_FIX.format(p=path))
             if b"\0" not in data[:8000] and b"\r\n" in data:
                 found.append(f"{path}: has CRLF line endings. Fix: " + CRLF_FIX.format(p=path))
     return found
@@ -93,6 +98,15 @@ def selftest():
         run("add", "blob.bin")
         run("rm", "-q", "gone.sh")
         assert problems(t) == [], ("binary with CRLF bytes and a deleted script must pass", problems(t))
+
+        write("new.py", b"#!/usr/bin/env python3\nprint(1)\n")
+        write("lib.py", b"print(1)\n")
+        run("add", "new.py", "lib.py")
+        p = problems(t)
+        assert len(p) == 1 and "new.py: is a new script" in p[0], p
+        os.chmod(os.path.join(t, "new.py"), 0o755)
+        run("add", "new.py")
+        assert problems(t) == [], ("a new script at 100755 and a new module without #! must pass", problems(t))
     print("selftest OK")
     return 0
 
