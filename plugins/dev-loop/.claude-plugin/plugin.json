@@ -1,0 +1,10 @@
+{
+  "name": "dev-loop",
+  "version": "1.0.0",
+  "description": "Coding workflow skills, namespaced dev-loop:*. architect (idea → design → proven plan → build → verify), ouroboros (adversarial planning loop with an independent verifier), handoff (park an out-of-scope find as a plan instead of fixing it inline), git-conflict (resolve merge and rebase conflicts by intent). Enable it per project.",
+  "author": {
+    "name": "Isaac Bacon",
+    "email": "bakonblitzgithub@gmail.com"
+  },
+  "license": "MIT"
+}

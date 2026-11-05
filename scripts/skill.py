@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""skill.py — the /bacon:skill command: list, log and lint every plugin's skills.
+"""skill.py — the /skill-kit:skills command: list, log and lint every plugin's skills.
 
   skill.py list                      every installed plugin's skills, on or off here
   skill.py log                       logging state and the log files on this machine
@@ -8,14 +8,16 @@
   skill.py lint [plugin dir ...]     enforce the skill rules; exits 1 on a failure
   skill.py --selftest
 
-Names are as typed: bacon:greet, or just greet when only one plugin has it.
-The lint rules (docs: plugins/bacon/skills/skill-create/SKILL.md):
+Names are as typed: skill-kit:create, or just create when only one plugin has it.
+The lint rules (docs: the skill-kit plugin's skills/create/SKILL.md):
   fail  a plugin without a `list` skill
   fail  skill code that is not Python (py.sh, the interpreter picker, is the one exception)
   fail  a skill .py without a --selftest, or without skilllog
   fail  shell logic (a pipe, $( ), a loop) written into a SKILL.md: it belongs in a script
   fail  a SKILL.md without name or description
   warn  a description that does not open with quoted triggers
+  fail  in a plugin marked public (.claude-plugin/PUBLIC): one workspace's paths, machines, local
+        tools or model names, or owner pronouns; a line ending in public-ok is exempt
 Stdlib only, Python 3.9.
 """
 import importlib.util
@@ -24,7 +26,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-AI_TOOLS = HERE.parent
+CHECKOUT = HERE.parent  # the repo or plugin this copy of skill.py ships in
 sys.path.insert(0, str(HERE))
 import skilllog  # noqa: E402
 
@@ -42,12 +44,12 @@ SHELL_LOGIC = [(re.compile(r"\s\|\s"), "a pipe"), (re.compile(r"\$\("), "a $( ) 
 PUBLIC_MARK = "PUBLIC"
 PUBLIC_TEXT = {".md", ".py", ".json", ".sh", ".txt", ".toml", ".yaml", ".yml"}
 NOT_PUBLIC = [  # first match per line is reported; paths before words
-    (re.compile(r"~/www\b|/mnt/www\b|\bM:\\|/Users/\w+"), "a workspace path"),
-    (re.compile(r"\bssh mac\b|\bon-mac\.sh\b"), "ssh mac (one machine's setup)"),
-    (re.compile(r"\bai-tools\b|\bclaude-config\b|context/memory\b"), "a reference to the private harness"),
-    (re.compile(r"\b[Hh]ermes\b|\bOpenViking\b|\bLM ?Studio\b|\blmstudio\b"), "a local tool of one setup"),
-    (re.compile(r"\b(deepseek|gemma\d?|qwen[\d.]*|llama[\d.]*|devstral)\b", re.I), "a local model name"),
-    (re.compile(r"\b(he|his|him)\b"), "an owner pronoun (write for the user: you)"),
+    (re.compile(r"~/www\b|/mnt/www\b|\bM:\\|/Users/\w+"), "a workspace path"),  # public-ok
+    (re.compile(r"\bssh mac\b|\bon-mac\.sh\b"), "ssh mac (one machine's setup)"),  # public-ok
+    (re.compile(r"\bai-tools\b|\bclaude-config\b|context/memory\b"), "a reference to the private harness"),  # public-ok
+    (re.compile(r"\b[Hh]ermes\b|\bOpenViking\b|\bLM ?Studio\b|\blmstudio\b"), "a local tool of one setup"),  # public-ok
+    (re.compile(r"\b(deepseek|gemma\d?|qwen[\d.]*|llama[\d.]*|devstral)\b", re.I), "a local model name"),  # public-ok
+    (re.compile(r"\b(he|his|him)\b"), "an owner pronoun (write for the user: you)"),  # public-ok
 ]
 
 
@@ -94,7 +96,7 @@ def log_cmd(args, d=None, known=None):
         n = int(args[2]) if len(args) > 2 else 40
         p = skilllog.log_path(name, d)
         if not p.exists():
-            return [f"no log for {name} yet ({'on' if skilllog.is_on(name, d) else 'off'}; `/bacon:skill log on {name}` turns it on)"]
+            return [f"no log for {name} yet ({'on' if skilllog.is_on(name, d) else 'off'}; `/skill-kit:skills log on {name}` turns it on)"]
         return p.read_text(encoding="utf-8").splitlines()[-n:]
     if sub == "status":
         out = [status_line(d)]
@@ -119,9 +121,9 @@ def plugin_dirs(roots=None, claude=None):
         return [Path(r) for r in roots]
     claude = Path(claude or ls.HOME / ".claude")
     managed = (claude / "plugins").resolve()  # cache and GitHub marketplaces: Claude's copies
-    out = sorted(p for p in (AI_TOOLS / "plugins").glob("*") if (p / ".claude-plugin" / "plugin.json").exists())
-    cc = AI_TOOLS.parent / "projects" / "claude-config" / "plugin"
-    out += [cc] if (cc / ".claude-plugin" / "plugin.json").exists() else []
+    is_plugin = lambda d: (d / ".claude-plugin" / "plugin.json").exists()
+    out = [CHECKOUT] if is_plugin(CHECKOUT) else []
+    out += sorted(p for p in (CHECKOUT / "plugins").glob("*") if is_plugin(p))
     names = {ls.rows(p)[0] for p in out}
     seen = {p.resolve() for p in out}
     for pdir, _ in ls.known_plugins(claude).values():
@@ -161,7 +163,7 @@ def lint_plugin(pdir):
     found = []
     add = lambda level, path, msg: found.append((level, str(path), msg))
     if not (pdir / "skills" / "list" / "SKILL.md").exists():
-        add("fail", pdir, "no `list` skill: copy bacon:list")
+        add("fail", pdir, "no `list` skill: copy skill-kit:list")
     files = [p for p in [*(pdir / "scripts").glob("*"), *(pdir / "skills").rglob("*")]
              if p.is_file() and "__pycache__" not in p.parts and not p.name.startswith(".")]
     for f in files:
@@ -244,15 +246,15 @@ def selftest():
     check([lvl for lvl, _, _ in got] == ["warn"], f"a clean plugin passes; an unquoted description only warns: {got}")
 
     # a public plugin may not carry one workspace's specifics; a private one may
-    skill("go", '"go now". Goes.', "Plans go to ~/www/.plans and he decides.\nRun it for the user.\nhis example  <!-- public-ok -->\n")
+    skill("go", '"go now". Goes.', "Plans go to ~/www/.plans and he decides.\nRun it for the user.\nhis example  <!-- public-ok -->\n")  # public-ok
     (p / "hooks").mkdir()
-    (p / "hooks" / "h.sh").write_text("# runs over ssh mac\n")
+    (p / "hooks" / "h.sh").write_text("# runs over ssh mac\n")  # public-ok
     check(not any("public plugin" in m for _, _, m in lint([p])), "a private plugin may name its workspace")
     (p / ".claude-plugin" / PUBLIC_MARK).write_text("")
     got = [(path, m) for _, path, m in lint([p]) if "public plugin" in m]
     check(sum(path.endswith("go/SKILL.md:5") for path, _ in got) == 1
-          and any(path.endswith("go/SKILL.md:5") and "~/www" in m for path, m in got)
-          and any(path.endswith("h.sh:1") and "ssh mac" in m for path, m in got)
+          and any(path.endswith("go/SKILL.md:5") and "~/www" in m for path, m in got)  # public-ok
+          and any(path.endswith("h.sh:1") and "ssh mac" in m for path, m in got)  # public-ok
           and not any(path.endswith("go/SKILL.md:6") or path.endswith("go/SKILL.md:7") for path, _ in got),
           f"a public plugin fails on workspace paths, ssh mac and owner pronouns, one finding per line, public-ok exempts a line: {got}")
     (p / ".claude-plugin" / PUBLIC_MARK).unlink()
@@ -271,15 +273,16 @@ def selftest():
     (third / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "tp", "source": "./"}]}))
     (third / "skills" / "list").mkdir(parents=True)
     twin = t / "twin"  # another checkout of a plugin this checkout already provides
+    own = ls.rows(plugin_dirs(claude=t / "no-claude")[0])[0]
     (twin / ".claude-plugin").mkdir(parents=True)
-    (twin / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "bacon", "source": "./"}]}))
-    (twin / ".claude-plugin" / "plugin.json").write_text('{"name": "bacon"}')
+    (twin / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"plugins": [{"name": own, "source": "./"}]}))
+    (twin / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": own}))
     (twin / "skills" / "list").mkdir(parents=True)
     (c / "plugins" / "known_marketplaces.json").write_text(json.dumps({
         "mk": {"installLocation": str(m)}, "th": {"installLocation": str(third)}, "tw": {"installLocation": str(twin)}}))
     (c / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {
         "loc@mk": [{"installPath": str(c / "plugins" / "cache" / "mk" / "loc" / "1")}],
-        "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], "bacon@tw": [{}]}}))
+        "remote@gh": [{"installPath": str(cached)}], "tp@th": [{}], own + "@tw": [{}]}}))
     (c / "settings.json").write_text("{}")
     dirs = [d.resolve() for d in plugin_dirs(claude=c)]
     check(m.resolve() in dirs and not {cached.resolve(), third.resolve(), twin.resolve()} & set(dirs),
@@ -312,7 +315,7 @@ def main(args):
         pass
     if args == ["--selftest"]:
         return selftest()
-    log = skilllog.logger("bacon:skill")
+    log = skilllog.logger("skill-kit:skills")
     with log.run(args):
         cmd = args[0] if args else "list"
         if cmd == "list":

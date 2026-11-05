@@ -48,30 +48,25 @@ current task's focus is the higher-order goal.
 1. **Name it, don't fork silently.** Tell the user in one sentence what you noticed
    and that you want to hand it off. They should never discover a fork after the
    fact.
-2. **Write the handoff plan** to the **workspace share**, at `<root>/.plans/handoff-<slug>.md`
-   — `~/www/.plans/` on the Mac, `M:\.plans\` on the PC, `/mnt/www/.plans/` from
-   WSL/Hermes (three real spellings of the same root; see `detect_root()` in
-   `scripts/session-todo.sh`). `<slug>` is a short kebab-case summary (e.g.
+2. **Write the handoff plan** to `<plans>/handoff-<slug>.md`. `<plans>` is the folder
+   the user's CLAUDE.md names for plans (for example a folder shared between machines),
+   else `.plans/` at the repo root. `<slug>` is a short kebab-case summary (e.g.
    `handoff-null-account-export.md`). Use the template below — it *is* the plan of
    work the subagent will execute.
 
-   **Not `~/.claude/plans/`.** That directory is machine-local, and the `SessionStart`
-   digest (`scripts/session-todo.sh`) runs on the Mac over ssh — so a handoff
-   written there from the PC never resurfaces anywhere, which defeats the entire point
-   of parking it. The share is visible from all three systems. The digest reads both
-   locations and dedups by filename, so an older plan in `~/.claude/plans/` still shows
-   up; new ones belong on the share.
+   Prefer a folder that the next session will look at. A plan in a machine-local
+   folder that no later session reads is a dropped observation with extra steps.
 
-   **The status goes under a `## Status` heading, nothing else.** The digest reads a
-   handoff's state only from the first non-blank line after `## Status`: `open`,
-   optionally followed by ` — <short status text>` (greet shows that text), or the word
-   done to close it. A status line placed anywhere else (for example straight under the
-   title) is not read; the handoff is listed as "NO STATUS" instead of as open work.
-   Keep the heading even when you update the status later.
-3. **Check that it surfaces.** Run `bash ~/www/ai-tools/scripts/session-todo.sh ~/www`
-   (on the PC through `ssh mac`, with stdin from /dev/null) and confirm
-   the new file is in the list with its `open` text. Never tell the user that greet or
-   the next session will pick it up until you have seen it there.
+   **The status goes under a `## Status` heading, nothing else.** Tools that list open
+   handoffs read the state from the first non-blank line after `## Status`: `open`,
+   optionally followed by ` — <short status text>`, or the word done to close it. A
+   status line placed anywhere else (for example straight under the title) is not
+   read. Keep the heading even when you update the status later.
+3. **Check that it surfaces.** If the user's setup has a command that lists open
+   handoffs (a session-start digest, a todo script; their CLAUDE.md names it), run it
+   and confirm the new file is listed with its `open` text. Otherwise re-read the file
+   and confirm the `## Status` heading and line. Never tell the user that a later
+   session will pick it up until you have seen that it will.
 4. **Surface it and ask.** Show the user the plan path and a one-line summary, then
    ask whether to spawn the subagent now, hand it off later, or skip. **Wait for the
    go-ahead** — do not spawn unprompted. (The user works in plan mode and reads

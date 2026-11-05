@@ -7,7 +7,7 @@
 
 Each row comes from the skill's SKILL.md frontmatter. A description that opens with quoted trigger
 phrases ("load my context", "check the tree". Loads ...) is listed by what follows them; the
-skill-create convention writes descriptions that way. Stdlib only, Python 3.9.
+skill-kit:create convention writes descriptions that way. Stdlib only, Python 3.9.
 """
 import json
 import re
@@ -171,15 +171,20 @@ def main(args):
         pass
     if args == ["--selftest"]:
         return selftest()
-    if args == ["--all"]:
-        print(list_all())
-        return 0
-    if len(args) == 1 and (Path(args[0]) / "skills").is_dir():
-        name, rs = rows(Path(args[0]))
-        print(f"### {name}\n\n{table(rs)}")
-        return 0
-    print(__doc__)
-    return 2
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from skilllog import logger
+    log = logger("list-skills")
+    with log.run(args):
+        if args == ["--all"]:
+            print(list_all())
+            return 0
+        if len(args) == 1 and (Path(args[0]) / "skills").is_dir():
+            name, rs = rows(Path(args[0]))
+            log("listed", plugin=name, skills=len(rs))
+            print(f"### {name}\n\n{table(rs)}")
+            return 0
+        print(__doc__)
+        return 2
 
 
 if __name__ == "__main__":

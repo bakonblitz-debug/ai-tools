@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""skilllog.py — optional run log for skill scripts. Off until `/bacon:skill log on`.
+"""skilllog.py — optional run log for skill scripts. Off until `/skill-kit:skills log on`.
 
 In a skill script:
     from skilllog import logger
-    log = logger("bacon:greet")           # the command name as he types it
+    log = logger("myplugin:greet")        # the command name as you type it
     log("titled", title=t)                # one line, a no-op while logging is off
     with log.run(sys.argv[1:]):           # start, end with exit code and seconds, or the traceback
         main()

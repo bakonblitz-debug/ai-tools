@@ -10,4 +10,4 @@ Run from the Bash tool:
 
 `bash "<this skill's base directory>/../../../../scripts/py.sh" "<this skill's base directory>/../../../../scripts/list-skills.py" "<this skill's base directory>/../.."`
 
-Print the table it returns as it is, then stop. For every plugin at once: `/bacon:skill list`.
+Print the table it returns as it is, then stop. For every plugin at once: `/skill-kit:skills list`.

@@ -1,20 +1,18 @@
 ---
 name: git-conflict
 description: >
-  "merge conflict", "rebase conflict", "conflicting changes", "resolve conflicts", "worktrees diverged", "two agents touched the same file". Resolves merge and rebase conflicts, including the context repo's. Use when `git status` shows unmerged paths or a merge/rebase stops with markers. Not for ordinary review.
+  "merge conflict", "rebase conflict", "conflicting changes", "resolve conflicts", "worktrees diverged", "two agents touched the same file". Resolves merge and rebase conflicts, in code and in notes or memory repos. Use when `git status` shows unmerged paths or a merge/rebase stops with markers. Not for ordinary review.
 ---
 
 # Git Conflict — Cross-Agent Conflict Resolution
 
-> **Model:** Switch to `deepseek-r1:32b-65k` before starting
-> (`/model deepseek-r1:32b-65k`). Conflict resolution is a judgment call about
-> two divergent intents, not mechanical text merging — treat it with the same
-> model tier as ouroboros/architect, not the default coding model.
-> Switch back to `gemma3:27b-65k` when complete.
+> **Model:** conflict resolution is a judgment call about two divergent intents,
+> not mechanical text merging — run it on your planning-tier model (the one you
+> use for ouroboros/architect), not the cheapest coding model.
 
 ## When to use
 
-Multiple agents (parallel Hermes sessions, isolated Claude Code worktrees, or
+Multiple agents (parallel agent sessions, isolated Claude Code worktrees, or
 a human and an agent) made concurrent changes to the same file(s) or
 diverging branches, and git now reports unmerged paths — mid-merge,
 mid-rebase, or a PR showing conflicting files. Do not invoke this
@@ -66,28 +64,25 @@ itself a signal to escalate (§4) rather than guess.
   hand into one coherent version. This is the common case and the whole
   reason "just take theirs" is wrong.
 - Two sides making **the same fix in different ways** → pick the version that
-  better matches the codebase's existing patterns (see `hermes-harness-
-  2026-07-02.md`'s "existing patterns → follow them" rule), and note why the
-  other approach wasn't used.
+  better matches the codebase's existing patterns (existing patterns win over
+  new ones), and note why the other approach wasn't used.
 - Two sides **genuinely incompatible** (same behavior, opposite requirements)
   → this is a requirements conflict, not a merge conflict. Do not resolve it
   silently; escalate (§4).
 - Remove every conflict marker (`<<<<<<<`, `=======`, `>>>>>>>`) — a leftover
   marker is a silent syntax-breaking bug in almost every language.
-- Tag the resolution as a commit-message note (not in the code), using the
-  hand-off convention from `ai-tools/docs/harness.md`:
+- Tag the resolution as a commit-message note (not in the code):
   `#PATH_DECISION: kept <ours|theirs|merged> because <reason>` — makes the
-  judgment call auditable later, same as Task-Decompose specs.
+  judgment call auditable later.
 
 ### 4. Escalate instead of guessing, when:
 
 - The two sides' intents are incompatible, not just differently-expressed
-- Resolution would touch the compliance floor (Loi 25 > PIPEDA > GDPR > HIPAA
-  > CCPA) or OWASP-relevant surface (auth, input handling, storage) — same
-  bar as the harness's Worker Output Gate escalation triggers
+- Resolution would touch privacy or compliance rules that apply to the project
+  (personal data, retention, consent) or security-relevant surface (auth, input
+  handling, storage)
 - You cannot state, in one sentence, what either side was trying to do
 - The conflict spans more than ~150 changed lines across more than one file
-  (same threshold used elsewhere in the harness's escalation triggers)
 
 When escalating: stop, do not commit a half-resolved merge, and report the
 crux plainly, mirroring ouroboros's `DEADLOCK` format:
@@ -118,41 +113,38 @@ worktrees' branches are merged back (`git merge <worktree-branch>`), not by
 editing files inside both worktrees separately; editing both sides is how
 the same conflict re-appears at the next merge.
 
-### 7. Context & memory conflicts (ai-tools harness) — ideas, not code
+### 7. Notes and memory conflicts — ideas, not code
 
-When the conflicted paths are under the private context repo's `context/` or `memory/`
-(the cross-machine context tree and shared Claude Code memory), the two sides
-are usually him working on or talking about the same things from two
-machines at once — the conflict is between *recorded ideas*, not
-implementations. The mechanical steps above still apply (§1-2, marker
-removal, a final end-to-end read), but "run the test suite" doesn't, and the
-resolution protocol changes. It is **always interactive**: never resolve a
-context/memory conflict silently, however trivial it looks. (On the Claude
-Code side, ignore this skill's model-switch header — run as-is.)
+When the conflicted paths are in a repo of notes rather than code (a context or
+knowledge folder, Claude Code memory files synced through git between
+machines), the two sides are usually the user working on or talking about the
+same things from two machines at once — the conflict is between *recorded
+ideas*, not implementations. The mechanical steps above still apply (§1-2,
+marker removal, a final end-to-end read), but "run the test suite" doesn't, and
+the resolution protocol changes. It is **always interactive**: never resolve a
+notes conflict silently, however trivial it looks.
 
 Read both sides, then classify what actually diverged:
 
 1. **Same idea, different wording or caveats** → merge into one entry that
-   keeps every caveat from both sides. Then give him a short summary
+   keeps every caveat from both sides. Then give the user a short summary
    anyway: why the conflict happened (which machines/sessions collided) and
-   what the differences were — he gets the note even when nothing needs his
+   what the differences were — they get the note even when nothing needs a
    decision.
 2. **Differing ideas** — the two entries would lead to different actions →
-   challenge him on the substance: present both versions and where each
+   challenge the user on the substance: present both versions and where each
    came from, what each implies going forward, and ask which stands — or
-   whether the divergence means his thinking moved on and both entries are
+   whether the divergence means their thinking moved on and both entries are
    stale.
 3. **Philosophy-level divergence** — the entries reveal different underlying
-   principles, not just different conclusions → pick his brain: talk it
-   through until it's clear where he actually sits now, and record *that* —
-   the resolved position, dated, superseding both sides — rather than
-   merging text.
+   principles, not just different conclusions → talk it through with the user
+   until it's clear where they actually stand now, and record *that* — the
+   resolved position, dated, superseding both sides — rather than merging text.
 
-In all three cases keep the `#PATH_DECISION:` commit-message note, leave the
-resolved entry in the file that owns the topic, and revert index checkboxes
-to `- [ ]` up the chain as with any context edit. `MEMORY.md` index
-collisions are almost always class 1 — merge both lines and keep the summary
-to a sentence.
+In all three cases keep the `#PATH_DECISION:` commit-message note and leave the
+resolved entry in the file that owns the topic. Collisions in an index file
+(one line per entry, such as a memory index) are almost always class 1 — merge
+both lines and keep the summary to a sentence.
 
 ## What this skill owns vs. delegates
 
