@@ -1,7 +1,7 @@
 import { errorTable } from '../analysis/routing';
 import { startHeatmap } from '../src/heatmap';
-import { coverage, filterEvents, hookTop, loadEvents, openOtel, SOURCES, toolDecisions } from '../src/otel';
-import { applyFilters, href, TAGS, tz } from '../src/query';
+import { coverage, coverageScope, filterEvents, hookTop, loadEvents, loadRequests, openOtel, SOURCES, toolDecisions } from '../src/otel';
+import { href, TAGS, tz } from '../src/query';
 import { Segment } from './FilterBar';
 import Info from './Info';
 import Spark from './Spark';
@@ -127,14 +127,15 @@ export function OtelPanels({ ctx }: { ctx: Ctx }) {
   );
   if (!otel) return empty;
   const evs = filterEvents(loadEvents(otel, dates[0]!, q.today, tz()), q);
+  const covSessions = coverageScope(ctx.sessions, dates, q.machine);
+  const times = covSessions.flatMap((s) => (s.started && s.ended ? [Date.parse(s.started + 'Z'), Date.parse(s.ended + 'Z')] : []));
+  const covEvs = times.length ? loadRequests(otel, Math.min(...times), Math.max(...times) + 60_000, tz()) : [];
   otel.close();
-  if (evs.length === 0) return empty;
-  const sessions = applyFilters(ctx.sessions, ctx.usage, { project: '', model: q.model, effort: q.effort }).sessions
-    .filter((s) => dates.includes(s.date) && (q.machine === 'all' || s.machine === q.machine));
-  const cov = coverage(evs, sessions, dates);
+  const cov = coverage(covEvs, covSessions, dates, ctx.today);
+  if (evs.length === 0 && cov.rows.length === 0) return empty;
   const greyN = cov.grey.filter(Boolean).length;
   const note = 'Telemetry panels honour machine, model, effort and days; project and agent filters do not apply to them.';
-  const greyNote = `Grey days have telemetry for under 90% of the transcript's requests${greyN ? ` (${greyN} in this window)` : ''}: gaps mean missing telemetry (Mac asleep, receiver down), not zero activity.`;
+  const greyNote = `Grey days: sessions started that day had telemetry for under 90% of their requests${greyN ? ` (${greyN} in this window)` : ''}.`;
   const dec = toolDecisions(evs, dates);
   const errs = errorTable(evs).filter((r) => r.requests > 0).sort((a, b) => b.requests - a.requests);
   const hooks = hookTop(evs);
@@ -155,13 +156,14 @@ export function OtelPanels({ ctx }: { ctx: Ctx }) {
             ))}
           </tbody>
         </table></div>
-        <p className="text-xs text-on-surface-variant">{greyNote} {note}</p>
+        <p className="text-xs text-on-surface-variant">{greyNote} This panel honours machine and days only; model, effort, project and agent filters do not apply to it.</p>
       </section>
+      {evs.length > 0 && <>
       <section className={card}>
         <h2 className={H2}>Tool decisions by source, per day{I('toolDecisions')}</h2>
-        <Stacked dates={dates} series={SOURCES.map((s) => [s, dec[s]!])} grey={cov.grey} marks={marks} />
+        <Stacked dates={dates} series={SOURCES.map((s) => [s, dec[s]!])} grey={dates.map(() => false)} marks={marks} />
         <div className="flex flex-wrap gap-3 text-xs">{SOURCES.map((s, i) => <span key={s} style={{ color: SRC_COLORS[i] }}>● {s}</span>)}</div>
-        <p className="text-xs text-on-surface-variant">{greyNote}</p>
+        <p className="text-xs text-on-surface-variant">{note}</p>
       </section>
       <section className={card}>
         <h2 className={H2}>API errors and refusals per 100 requests, by model and effort{I('apiErrors')}</h2>
@@ -189,6 +191,7 @@ export function OtelPanels({ ctx }: { ctx: Ctx }) {
         )}
         <p className="text-xs text-on-surface-variant">Per-run duration (ms) from hook_execution_complete; hook names are hashed by the receiver. {note}</p>
       </section>
+      </>}
     </>
   );
 }

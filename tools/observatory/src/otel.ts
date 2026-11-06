@@ -44,19 +44,47 @@ export function filterEvents(evs: Ev[], f: { machine: string; model: string; eff
 }
 
 export type CoverageRow = { date: string; machine: string; otel: number; transcript: number; ratio: number | null; grey: boolean };
-/** api_request events / transcript requests per day and machine; grey = a machine under 90%. Days with no transcript requests are not grey. */
-export function coverage(evs: Ev[], sessions: Pick<SessionRow, 'date' | 'machine' | 'assistant_msgs'>[], dates: string[]) {
+/** Requests that land in a transcript; every other query_source is a side call. */
+export const IN_TRANSCRIPT = (qs: unknown) => qs == null || qs === 'repl_main_thread' || qs === 'sdk' || (typeof qs === 'string' && qs.startsWith('agent:'));
+
+/** api_request events with ts in [fromMs, toMs]. */
+export function loadRequests(db: Database, fromMs: number, toMs: number, tz?: string): Ev[] {
+  return (db.prepare(`SELECT ${COLS} FROM otel_events WHERE name LIKE '%api_request' AND ts BETWEEN ? AND ? ORDER BY ts`).all(fromMs, toMs) as DbRow[]).map((r) => toEv(r, tz));
+}
+
+export type CovSession = Pick<SessionRow, 'session' | 'date' | 'machine' | 'assistant_msgs' | 'scratch' | 'started' | 'ended'>;
+const baseId = (s: string) => s.split('/')[0]!;
+/** Non-scratch main rows dated in `dates` on the machine ('all' = any), plus the subagent rows of those mains. */
+export function coverageScope<S extends CovSession>(sessions: S[], dates: string[], machine: string): S[] {
+  const mains = new Set(sessions.filter((s) => !s.session.includes('/') && !s.scratch && dates.includes(s.date) && (machine === 'all' || s.machine === machine)).map((s) => s.session));
+  return sessions.filter((s) => mains.has(baseId(s.session)));
+}
+
+/** api_request events / transcript requests per day and machine; a session family (main row + its `<main>/<agent>` rows) counts on the main row's date and machine; grey = a machine under 90%, never on `today`. */
+export function coverage(evs: Ev[], sessions: CovSession[], dates: string[], today?: string) {
   const key = (d: string, m: string) => d + '|' + m;
+  const end = (s: CovSession) => (s.ended ? Date.parse(s.ended + 'Z') : 0);
+  const day = new Map<string, { date: string; machine: string; endMs: number }>();
+  for (const s of sessions) if (!s.session.includes('/')) day.set(s.session, { date: s.date, machine: s.machine, endMs: end(s) });
   const otel = new Map<string, number>(), tr = new Map<string, number>();
-  for (const e of evs) if (e.name === 'api_request' && e.machine) otel.set(key(e.date, e.machine), (otel.get(key(e.date, e.machine)) ?? 0) + 1);
-  for (const s of sessions) tr.set(key(s.date, s.machine), (tr.get(key(s.date, s.machine)) ?? 0) + (s.assistant_msgs ?? 0));
+  for (const s of sessions) {
+    const f = day.get(baseId(s.session));
+    if (!f) continue;
+    f.endMs = Math.max(f.endMs, end(s));
+    tr.set(key(f.date, f.machine), (tr.get(key(f.date, f.machine)) ?? 0) + (s.assistant_msgs ?? 0));
+  }
+  for (const e of evs) {
+    const f = e.session_id ? day.get(e.session_id) : undefined;
+    if (e.name !== 'api_request' || !f || !IN_TRANSCRIPT(e.attrs.query_source) || e.ts > f.endMs + 60_000) continue;
+    otel.set(key(f.date, f.machine), (otel.get(key(f.date, f.machine)) ?? 0) + 1);
+  }
   const machines = [...new Set([...otel.keys(), ...tr.keys()].map((k) => k.split('|')[1]!))].sort();
   const rows: CoverageRow[] = [];
   for (const date of dates) for (const machine of machines) {
     const o = otel.get(key(date, machine)) ?? 0, t = tr.get(key(date, machine)) ?? 0;
     if (!o && !t) continue;
     const ratio = t ? o / t : null;
-    rows.push({ date, machine, otel: o, transcript: t, ratio, grey: ratio != null && ratio < GREY_BELOW });
+    rows.push({ date, machine, otel: o, transcript: t, ratio, grey: ratio != null && ratio < GREY_BELOW && date !== today });
   }
   const grey = dates.map((d) => rows.some((r) => r.date === d && r.grey));
   const combined = dates.map((d) => {

@@ -30,7 +30,7 @@ export async function loadCtx(sp: RawQ) {
   const marks = buildMarks(commits, q.overlay, TAG_COLORS);
   const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
   return {
-    q, db, meta, sessions, usage, f, dates, scoped, commits, marks,
+    q, today, db, meta, sessions, usage, f, dates, scoped, commits, marks,
     projects: uniq(sessions.map((r) => r.project)), models: uniq(sessions.map((r) => r.model)),
   };
 }
