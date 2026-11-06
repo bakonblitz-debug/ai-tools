@@ -23,9 +23,15 @@ OWASP Top 10 (2021) is the working checklist, not a poster on the wall. Before a
 
 **Loi 25 > PIPEDA > GDPR > HIPAA > CCPA.** Quebec's Loi 25 is the strictest law he answers to, so it sets the bar; meeting it generally covers the rest. Concretely:
 
-- No real PII in tests, logs, URLs, error responses, or temp files. Ever. Synthetic fixtures only.
+- No real PII in tests, logs, URLs, error responses, or temp files. Synthetic fixtures only. The one exception is the temporary debug log below.
 - Mask on display. Blind indexes for sensitive fields that need to be searchable.
-- Log IDs and event types, never values that identify a person.
+- Log IDs and event types, never values that identify a person. Logs redact PII by default, in the code that writes them: a field that can hold a name, email, phone, address, date of birth or account number is logged masked (`last_name=D***`) or by its record ID, never raw.
+- **Debug logs may hold PII, temporarily.** His rule, stated 2026-11-06. While a bug is being debugged, a debug log may show the failing input unmasked (for example the last name that broke a parser), next to the record IDs needed to find it again. It is allowed only under these conditions:
+  - It is off by default and turned on explicitly for the session (`DEBUG_PII=1` or the project's equivalent), never in production config.
+  - It writes to its own file in a git-ignored debug folder, never to the normal log, the console of a shared environment, monitoring or an error tracker.
+  - It is deleted when the debug session ends: the flag is turned off, the file is removed, and the cleanup is checked before the fix is committed. A purge of debug files older than 24 hours on app start or in the daily job catches anything forgotten.
+  - The normal log keeps only the IDs, so the bug can still be found after the debug file is gone.
+  - When I read a debug log, the values I see are copied into the session transcript, which outlives the file. I read IDs and the shape of the data first, and look at raw values only when the bug cannot be found without them.
 - New field storing personal data? Purpose limitation applies — say why it exists or don't add it.
 - If I find PII in source or fixtures while doing something else, I flag it before continuing. Off-task doesn't mean off-duty.
 
@@ -50,6 +56,28 @@ I never read, list, or follow a symlink into `~/ai-restricted/`. If a task genui
 - Design patterns earn their place. I reach for one when it removes real complexity, not to decorate a class diagram — a pattern that needs explaining twice probably wasn't needed once.
 - **Scripts I write for myself are kept and reused, never improvised twice.** If a script will run more than once — a parser, a capture helper, a reconciliation, a cleanup, a diagnostic — it goes into the repo it serves (`scripts/` with a runner entry) or into `scripts/` when it is cross-project, *not* into the session scratchpad. His rule, stated 2026-08-16, and it is general: it costs fewer tokens than re-deriving the thing and it keeps the behaviour identical each run. A scratchpad script is invisible to the next session and to the other machine, so what gets re-derived drifts. **The test is whether the script has future value, not whether the answer does** — a one-time diff or an exploratory query is a genuine throwaway; anything I would write a second time is not. Before writing a helper, check whether I already wrote it. Cross-project helpers that exist today: **`scripts/on-mac.sh`** — runs a command on the Mac inside a workspace project, because on this two-machine share Docker on the Windows side cannot bind-mount the workspace (it mounts *empty and silently*) and git object writes fail over SMB from there. Use it for any build, test or git operation against `<workspace>`; `sync-memory.sh` and `claude-bootstrap.sh` are the other two.
 - Less code beats more code. Before writing anything new I climb the ladder: does this need to exist at all (YAGNI)? Does it already exist in this codebase (reuse, don't rewrite)? Can config or a small extension do it? Only then do I write, and only what's necessary — never at the expense of validation, error handling, or security. On the personal Claude Code side the `ponytail` plugin (adopted 2026-07-04, vetted: no network activity, MIT) enforces this at generation time; the principle applies everywhere regardless.
+
+### Every piece of the stack runs in a container
+
+His rule, stated 2026-11-06. Each technology in a project's stack gets its own container: database (MySQL, Postgres, Redis and so on), Node, the front end, the back end, the web server, workers, schedulers. Nothing of a project runs directly on a host machine. The one exception is the Python I run for myself and for the harness (scripts, hooks, checks), which stays on the host.
+
+- Every project has a `docker-compose.yml` with each image version pinned, so two projects can need two versions of the same runtime without either one fighting the host.
+- Builds, tests, linters, migrations and one-off scripts run through the container too (`docker compose run --rm <service> <command>`), not through a host install. "Just this once, natively" is how a host install creeps back.
+- Scheduled jobs are a container the scheduler starts, not a host script that calls a host runtime.
+- An embedded database (SQLite) lives inside the app's container with its file on a named volume or a bind mount; it does not get a server container of its own.
+- A project that still runs natively moves to containers the next time it is worked on, and a new project starts in containers from its first commit.
+- On a workspace shared over SMB, containers run on the machine that hosts the files: Docker on the client side mounts the share empty, silently (see `scripts/on-mac.sh` above).
+
+### Errors say what failed, where, and why
+
+His rule, stated 2026-11-06. An error that says only "Failed" or "Error" is a bug. Every error a script, app or job raises names three things: **what** it was trying to do, **what** it got instead, and **why**, or the best known cause. A reader should be able to start fixing it without reproducing it first.
+
+- Message for people (a UI, an email, a CLI line): plain language, the action that failed, the cause, and the next step when there is one. `Could not save the letter: the database is locked by another process (the daily capture is running). Try again in a few minutes.`, not `Save failed`.
+- Message for the log and for me: the same plus the detail, meaning the file and line, the exception class and message, the inputs that matter (IDs, paths, exit codes; never secrets or PII), and the stack trace.
+- A verbose mode (`--verbose`, `DEBUG=1`, or the framework's debug flag) prints the full detail to the person as well. It is off by default wherever end users see the output.
+- Re-raising keeps the original cause attached (`raise ... from e`, `new Error(msg, { cause })`, `previous` in PHP). A wrapper that swallows the cause loses the only clue.
+- Shell scripts report the failing command and its exit code (`trap 'echo "line $LINENO: $BASH_COMMAND exited $?" >&2' ERR`), not a bare non-zero exit.
+- The privacy floor above still holds: no secrets, tokens or real PII in any error message, log or response.
 
 ### TDD rule
 
