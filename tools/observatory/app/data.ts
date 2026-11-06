@@ -1,7 +1,8 @@
+import { buildMarks } from '../src/chart';
 import { ensureFresh, openDb, readMeta } from '../src/loader';
 import type { SessionRow, UsageRow } from '../src/metrics';
 import { readCommits } from '../src/overlay';
-import { applyFilters, dayList, parseQuery, type RawQ } from '../src/query';
+import { applyFilters, dayList, parseQuery, type RawQ, tz } from '../src/query';
 
 export const METRICS_DIR = process.env.METRICS_DIR_IN_CONTAINER ?? '/data/metrics';
 export const TAG_COLORS: Record<string, string> = { 'CLAUDE.md': '#c2185b', settings: '#00838f', plugins: '#6d4c41', scripts: '#7b1fa2', other: '#78909c' };
@@ -11,7 +12,7 @@ const KINDS = { interactive: ['interactive', 'subagent'], headless: ['headless',
 
 /** Everything a page needs from the query string: validated filters, loaded rows, filtered rows, commits for overlays. */
 export async function loadCtx(sp: RawQ) {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: process.env.TZ });
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz() });
   const q = parseQuery(sp, today);
   db ??= openDb();
   ensureFresh(db, METRICS_DIR, process.env);
@@ -26,7 +27,7 @@ export async function loadCtx(sp: RawQ) {
   // main sessions inside the global filters (what the Sessions table and heatmap list)
   const scoped = f.sessions.filter((r) => !r.session.includes('/') && inScope(r) && (!kinds || kinds.includes(r.agent_kind)));
   const commits = readCommits(dates[0]!, q.today);
-  const marks = commits.filter((c) => c.tags.some((t) => q.overlay.includes(t))).map((c) => ({ date: c.date, color: TAG_COLORS[c.tags.find((t) => q.overlay.includes(t))!]! }));
+  const marks = buildMarks(commits, q.overlay, TAG_COLORS);
   const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
   return {
     q, db, meta, sessions, usage, f, dates, scoped, commits, marks,
