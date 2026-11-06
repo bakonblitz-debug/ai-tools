@@ -31,13 +31,13 @@ export const FORMULAS: Record<string, string> = {
 export const PANELS: Record<string, { title: string; explanation: string; reading: string; source: string }> = {
   coverage: {
     title: 'Telemetry coverage (OTel api_request / transcript requests)',
-    explanation: 'Grey days have telemetry for under 90% of the transcript\'s requests: gaps mean missing telemetry (Mac asleep, receiver down), not zero activity.',
-    reading: 'A value near 100% means telemetry saw nearly every request the transcripts recorded. Grey days are too incomplete to trust in the panels below.',
-    source: 'otel.db: api_request events; sessions.tsv: assistant_msgs',
+    explanation: 'Share of the requests from sessions started that day that telemetry also recorded. Counts main-conversation, headless and subagent calls; leaves out side calls (titles, suggestions, summaries) and scratch batch runs, which send no telemetry. Ignores the model and effort filters.',
+    reading: 'About 100% means telemetry saw every request. Grey: sessions started that day were under-covered; the gap can be on any day those sessions ran. Today is never grey; its sessions may still be running.',
+    source: 'otel.db: api_request events by session; sessions.tsv: assistant_msgs, started, ended',
   },
   toolDecisions: {
     title: 'Tool decisions by source, per day',
-    explanation: 'How each tool call was decided (allowed or refused, and by what), counted per day. Grey days have incomplete telemetry.',
+    explanation: 'How each tool call was decided (allowed or refused, and by what), counted per day.',
     reading: 'Each colour is one decision source; the stack height is all tool decisions that day. Compare the mix, not just the height.',
     source: 'otel.db: tool_decision events',
   },

@@ -2,7 +2,7 @@ import Sqlite from 'better-sqlite3';
 import { expect, it } from 'vitest';
 import { startHeatmap } from '../src/heatmap';
 import { computeTiles, type SessionRow, type UsageRow } from '../src/metrics';
-import { coverage, filterEvents, hookTop, loadEvents, openOtel, toolDecisions, waterfall } from '../src/otel';
+import { coverage, coverageScope, filterEvents, hookTop, IN_TRANSCRIPT, loadEvents, loadRequests, openOtel, toolDecisions, waterfall } from '../src/otel';
 import { parseGitLog } from '../src/overlay';
 import { applyFilters, href, parseQuery } from '../src/query';
 
@@ -74,17 +74,82 @@ function fixture() {
 
 it('coverage ratio per day and machine, grey under 90%, empty db is not a crash', () => {
   const { db, add } = fixture();
-  for (let i = 0; i < 9; i++) add('api_request', T('2026-10-29') + i);
-  for (let i = 0; i < 5; i++) add('api_request', T('2026-10-30') + i);
-  for (let i = 0; i < 3; i++) add('api_request', T('2026-10-30') + i, { m: 'pc' });
+  const q = { query_source: 'repl_main_thread' };
+  for (let i = 0; i < 9; i++) add('api_request', T('2026-10-29') + i, { s: 'A' }, q);
+  for (let i = 0; i < 5; i++) add('api_request', T('2026-10-30') + i, { s: 'B' });
+  for (let i = 0; i < 3; i++) add('api_request', T('2026-10-30') + i, { s: 'C', m: 'pc' }, q);
   const evs = loadEvents(db, '2026-10-29', '2026-10-30', 'UTC');
-  const ss = [s({ date: '2026-10-29', assistant_msgs: 10 }), s({ date: '2026-10-30', assistant_msgs: 5 }), s({ date: '2026-10-30', machine: 'pc', assistant_msgs: 6 })];
+  const end = '2026-10-31T00:00:00';
+  const ss = [s({ session: 'A', date: '2026-10-29', assistant_msgs: 10, started: end, ended: end }), s({ session: 'B', date: '2026-10-30', assistant_msgs: 5, started: end, ended: end }), s({ session: 'C', date: '2026-10-30', machine: 'pc', assistant_msgs: 6, started: end, ended: end })];
   const c = coverage(evs, ss, ['2026-10-28', '2026-10-29', '2026-10-30']);
   expect(c.rows.find((r) => r.date === '2026-10-29')).toMatchObject({ ratio: 0.9, grey: false });
   expect(c.rows.find((r) => r.date === '2026-10-30' && r.machine === 'pc')).toMatchObject({ ratio: 0.5, grey: true });
   expect(c.grey).toEqual([false, false, true]);
   expect(coverage([], [], ['2026-10-30'])).toEqual({ rows: [], grey: [false], combined: [null] });
   expect(openOtel('/nonexistent/otel.db')).toBeNull();
+});
+
+const cov = (rows: Partial<SessionRow>[], events: [string, string, string?][], dates: string[], today?: string) => {
+  const { db, add } = fixture();
+  for (const [sid, d, qs] of events) add('api_request', T(d), { s: sid }, qs ? { query_source: qs } : {});
+  return coverage(loadRequests(db, 0, Date.now() * 2, 'UTC'), rows.map((r) => s(r)), dates, today);
+};
+
+it('IN_TRANSCRIPT keeps main, sdk, agent and missing sources only', () => {
+  for (const q of ['repl_main_thread', 'sdk', 'agent:builtin:general-purpose', undefined]) expect(IN_TRANSCRIPT(q)).toBe(true);
+  for (const q of ['prompt_suggestion', 'generate_session_title', 'compact', 'away_summary']) expect(IN_TRANSCRIPT(q)).toBe(false);
+});
+
+it('coverage ignores side calls', () => {
+  const c = cov([{ session: 'A', date: '2026-10-30', assistant_msgs: 2, started: '2026-10-30T15:00:00', ended: '2026-10-30T16:00:00' }],
+    [['A', '2026-10-30', 'repl_main_thread'], ['A', '2026-10-30', 'sdk'], ['A', '2026-10-30', 'prompt_suggestion'], ['A', '2026-10-30', 'compact']], ['2026-10-30']);
+  expect(c.rows).toMatchObject([{ date: '2026-10-30', machine: 'mac', otel: 2, transcript: 2, ratio: 1 }]);
+});
+
+it('coverage counts a session family on the main row date; orphans and unknown sessions count nowhere', () => {
+  const e = '2026-10-31T16:00:00';
+  const c = cov([
+    { session: 'A', date: '2026-10-30', assistant_msgs: 3, started: '2026-10-30T15:00:00', ended: e },
+    { session: 'A/x', date: '2026-10-31', assistant_msgs: 2, started: '2026-10-31T15:00:00', ended: e },
+    { session: 'Q/x', date: '2026-10-31', assistant_msgs: 4, started: '2026-10-31T15:00:00', ended: e },
+  ], [['A', '2026-10-30', 'repl_main_thread'], ['A', '2026-10-30', 'repl_main_thread'], ['A', '2026-10-30', 'repl_main_thread'],
+    ['A', '2026-10-31', 'agent:x'], ['A', '2026-10-31', 'agent:x'], ['Z', '2026-10-30', 'repl_main_thread'], ['Q', '2026-10-31', 'agent:x']], ['2026-10-30', '2026-10-31']);
+  expect(c.rows).toMatchObject([{ date: '2026-10-30', otel: 5, transcript: 5 }]);
+  expect(c.rows).toHaveLength(1);
+});
+
+it('coverage ignores events after the family ended plus a minute', () => {
+  const { db, add } = fixture();
+  const end = Date.parse('2026-10-30T15:00:00Z');
+  add('api_request', end + 800, { s: 'H' });
+  add('api_request', end + 120_000, { s: 'K', m: 'pc' });
+  const row = { date: '2026-10-30', assistant_msgs: 1, started: '2026-10-30T14:00:00', ended: '2026-10-30T15:00:00' };
+  const c = coverage(loadRequests(db, 0, end * 2, 'UTC'), [s({ ...row, session: 'H' }), s({ ...row, session: 'K', machine: 'pc' })], ['2026-10-30']);
+  expect(c.rows.find((r) => r.machine === 'mac')).toMatchObject({ otel: 1, ratio: 1 });
+  expect(c.rows.find((r) => r.machine === 'pc')).toMatchObject({ otel: 0, ratio: 0 });
+});
+
+it('a row dated today is never grey', () => {
+  const rows = [{ session: 'A', date: '2026-10-30', assistant_msgs: 2, started: '2026-10-30T15:00:00', ended: '2026-10-30T16:00:00' }];
+  const ev: [string, string, string][] = [['A', '2026-10-30', 'sdk']];
+  expect(cov(rows, ev, ['2026-10-30'], '2026-10-30').rows[0]).toMatchObject({ ratio: 0.5, grey: false });
+  expect(cov(rows, ev, ['2026-10-30']).rows[0]).toMatchObject({ ratio: 0.5, grey: true });
+});
+
+it('coverageScope keeps in-window non-scratch mains of the machine and their subagent rows', () => {
+  const M = s({ session: 'M', date: '2026-10-30' }), Ma = s({ session: 'M/a', date: '2026-11-02' });
+  const X = s({ session: 'X', date: '2026-10-30', scratch: 1 }), P = s({ session: 'P', date: '2026-10-30', machine: 'pc' });
+  const O = s({ session: 'O', date: '2026-10-01' }), Ob = s({ session: 'O/b', date: '2026-10-30' });
+  const all = [M, Ma, X, P, O, Ob], dates = ['2026-10-29', '2026-10-30', '2026-10-31'];
+  expect(coverageScope(all, dates, 'mac')).toEqual([M, Ma]);
+  expect(coverageScope(all, dates, 'all')).toEqual([M, Ma, P]);
+});
+
+it('loadRequests returns only api_request events in the time range', () => {
+  const { db, add } = fixture();
+  const t = T('2026-10-30');
+  add('api_request', t); add('tool_result', t); add('api_request', t + 10_000);
+  expect(loadRequests(db, t, t + 5_000, 'UTC').map((e) => e.name)).toEqual(['api_request']);
 });
 
 it('filters events by machine, model and effort (non-request events follow their session)', () => {
