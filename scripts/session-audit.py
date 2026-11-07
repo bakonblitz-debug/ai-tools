@@ -36,6 +36,7 @@ import re
 import socket
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECTS = Path.home() / ".claude" / "projects"
@@ -285,6 +286,22 @@ def hook_id(att):
     return str(att.get("hookName") or "?").removeprefix(f"{att.get('hookEvent')}:")
 
 
+LOCAL_TZ = None  # None = the machine's zone; selftests pin a fixed offset (Windows has no tzset)
+
+
+def local_day(ts, tz=None):
+    try:
+        t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return ts[:10]
+    return t.astimezone(tz or LOCAL_TZ).strftime("%Y-%m-%d")
+
+
+def session_id(path):
+    """A subagent transcript is keyed under its parent session."""
+    return f"{path.parents[1].name}/{path.stem}" if path.parent.name == "subagents" else path.stem
+
+
 def scan(path):
     """Return (metrics_row_dict, [candidate tuples]) for one transcript."""
     m = dict.fromkeys(COLUMNS, 0)
@@ -294,7 +311,7 @@ def scan(path):
     m["project"] = (path.parents[2] if sub else path.parent).name
     m["agent"] = "subagent" if sub else "main"
     if sub:  # keyed under its parent; the type comes from the meta file beside it
-        m["session"] = f"{path.parents[1].name}/{path.stem}"
+        m["session"] = session_id(path)
         try:
             meta = json.loads(path.with_suffix(".meta.json").read_text(encoding="utf8"))
             m["agent"] = f"subagent:{meta.get('agentType') or '?'}"
@@ -310,7 +327,7 @@ def scan(path):
     # context retrieval, and "suspected" is why this is measured rather than argued.
     targets = {}
     candidates = []
-    usage, model_of, effort_of = {}, {}, {}
+    usage, model_of, effort_of, ts_of = {}, {}, {}, {}
     calls = {}  # requestId -> set of activities its tool calls belong to
     arrivals, pending, tool_meta = {}, [], {}
     first_prompt = None  # only its first line is read, for a [hook:<name>] tag
@@ -325,7 +342,7 @@ def scan(path):
         ts = rec.get("timestamp", "")
         if ts:
             if not m["date"]:
-                m["date"] = ts[:10]
+                m["date"] = local_day(ts)
                 m["started"] = ts
             m["ended"] = ts
             stamps.append(ts)
@@ -351,6 +368,8 @@ def scan(path):
                 # What arrived since the previous request is this request's new input.
                 arrivals[rid], pending = pending, []
             usage[rid] = msg.get("usage") or {}
+            if ts and (rid not in ts_of or ts[:19] < ts_of[rid]):  # records of one request arrive out of order
+                ts_of[rid] = ts[:19]
             model_of[rid] = msg.get("model") or model_of.get(rid, "")
             effort_of[rid] = rec.get("effort") or effort_of.get(rid, "")  # absent before ~2026-10
             for block in msg.get("content") or []:
@@ -472,12 +491,13 @@ def scan(path):
         m["cache_read"] += u.get("cache_read_input_tokens", 0) or 0
         m["cache_create"] += u.get("cache_creation_input_tokens", 0) or 0
         m["thinking"] += (u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0
-    m["activity"], m["unpriced"] = {}, set()
+    m["activity"], m["usage_days"], m["unpriced"] = {}, {}, set()
     for rid, u in usage.items():
         kinds = calls.get(rid) or {"answering"}
         out = u.get("output_tokens", 0) or 0
         think = (u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0
         usd = cost(model_of[rid], u)
+        day = local_day(ts_of[rid]) if rid in ts_of else None  # None: the session's final date, set below
         if usd is None:
             m["unpriced"].add(model_of[rid])
         for k in kinds:  # ponytail: even split; weight by block size if it misleads
@@ -486,6 +506,11 @@ def scan(path):
             a["output"] += out / len(kinds)
             a["thinking"] += think / len(kinds)
             a["cost"] += (usd or 0) / len(kinds)
+            d = m["usage_days"].setdefault((day, k, effort_of[rid]), {"requests": 0, "output": 0, "thinking": 0, "cost": 0})
+            d["requests"] += 1 / len(kinds)
+            d["output"] += out / len(kinds)
+            d["thinking"] += think / len(kinds)
+            d["cost"] += (usd or 0) / len(kinds)
     # New input per request: session start, cache rebuild, then what arrived, by size.
     m["inputs"], m["carry"] = {}, 0
     def book(key, tok, img=0):
@@ -532,7 +557,6 @@ def scan(path):
     # exceeded duration_s in 46 of 85 rows, by up to 1.7x. Sort once, then both
     # figures derive from the same ordered list.
     IDLE = 300
-    from datetime import datetime
     fmt = "%Y-%m-%dT%H:%M:%S"
     times = []
     for ts in stamps:
@@ -553,8 +577,12 @@ def scan(path):
     if times:
         m["started"] = times[0].strftime(fmt)
         m["ended"] = times[-1].strftime(fmt)
-        m["date"] = m["started"][:10]
+        m["date"] = local_day(m["started"])
         m["duration_s"] = max(0, int((times[-1] - times[0]).total_seconds()))
+    for key in [k for k in m["usage_days"] if k[0] is None]:
+        d = m["usage_days"].setdefault((m["date"],) + key[1:], {"requests": 0, "output": 0, "thinking": 0, "cost": 0})
+        for f, v in m["usage_days"].pop(key).items():
+            d[f] += v
     return m, candidates
 
 
@@ -962,6 +990,43 @@ def selftest():
         bad(f"malformed line corrupted surrounding parsing: {m}")
     ok("a malformed JSONL line is skipped, not fatal")
 
+    # 8b. Local days: date is the machine's day, usage books per request day.
+    global LOCAL_TZ
+    from datetime import timezone, timedelta
+    saved_tz, LOCAL_TZ = LOCAL_TZ, timezone(timedelta(hours=-5))
+    try:
+        if (local_day("2026-01-02T03:30:00Z"), local_day("2026-01-02T05:30:00.123Z"), local_day("bad")) != ("2026-01-01", "2026-01-02", "bad"):
+            bad("local_day must convert UTC to the local day and fall back to ts[:10]")
+        m, _ = scan(transcript("localdays.jsonl", [
+            usage_msg("2026-01-02T03:30:00Z", rid="r1", tout=10),
+            usage_msg("2026-01-02T05:30:00Z", rid="r2", tout=20)]))
+        ud = m["usage_days"]
+        outs = {}
+        for (d, _a, _e), v in ud.items():
+            outs[d] = outs.get(d, 0) + v["output"]
+        if m["date"] != "2026-01-01" or outs != {"2026-01-01": 10, "2026-01-02": 20} \
+                or sum(v["requests"] for v in ud.values()) != 2 or any(len(k) != 2 for k in m["activity"]):
+            bad(f"local date / usage_days wrong: {m['date']} {outs} {list(m['activity'])}")
+        m, _ = scan(transcript("localmin.jsonl", [
+            usage_msg("2026-01-02T05:30:00Z", rid="r1", tout=1),
+            usage_msg("2026-01-02T04:59:00Z", rid="r1", tout=1)]))
+        if {k[0] for k in m["usage_days"]} != {"2026-01-01"}:
+            bad(f"a request books on its earliest record: {list(m['usage_days'])}")
+        # First record in file order is on 01-02; the earliest is on 01-01; r3 has no timestamp.
+        m, _ = scan(transcript("localnots.jsonl", [
+            usage_msg("2026-01-02T05:30:00Z", rid="r1", tout=1),
+            usage_msg("2026-01-02T03:30:00Z", rid="r2", tout=2),
+            usage_msg("", rid="r3", tout=4)]))
+        nots = sum(v["output"] for k, v in m["usage_days"].items() if k[0] == m["date"])
+        if m["date"] != "2026-01-01" or nots != 6 or None in {k[0] for k in m["usage_days"]}:
+            bad(f"a request with no timestamp books on the session's final date: {m['date']} {list(m['usage_days'])}")
+        for f in ("requests", "output", "cost"):
+            if abs(sum(v[f] for v in m["usage_days"].values()) - sum(v[f] for v in m["activity"].values())) > 1e-9:
+                bad(f"usage_days and activity disagree on {f}")
+        ok("sessions date by local day; usage books per local request day")
+    finally:
+        LOCAL_TZ = saved_tz
+
     # 9. End to end: main() writes one row per session and queues a candidate; a
     #    second run over the same transcript is idempotent (no duplicate row, no
     #    re-queued candidate already seen).
@@ -1227,6 +1292,76 @@ def selftest():
         PROJECTS, sys.argv = orig_projects, orig_argv
     ok("--out moves the TSVs, candidates stay shared, a held lock skips the run")
 
+    # 17. Usage rows per local day; rows of pruned transcripts re-dated to the local day.
+    saved_tz17, LOCAL_TZ = LOCAL_TZ, timezone(timedelta(hours=-5))
+    try:
+        PROJECTS = t / "projects17"
+        pd = PROJECTS / "p"
+        (pd / "G" / "subagents").mkdir(parents=True)
+        (pd / "L.jsonl").write_text("\n".join(json.dumps(r) for r in [
+            usage_msg("2026-01-02T03:30:00Z", rid="r1", tout=10),
+            usage_msg("2026-01-02T05:30:00Z", rid="r2", tout=20)]) + "\n", encoding="utf8")
+        (pd / "G" / "subagents" / "agent-x.jsonl").write_text(
+            json.dumps(usage_msg("2026-01-02T02:00:00Z", rid="r3", tout=5)) + "\n", encoding="utf8")
+        ctx17 = t / "ctx17"
+        mdir = ctx17 / "context" / "metrics"
+        mdir.mkdir(parents=True)
+        srow = dict.fromkeys(COLUMNS, "0")
+        srow.update(session="P", date="2026-01-02", started="2026-01-02T03:00:00", project="p")
+        qrow = dict(srow, session="Q", date="2026-01-01")  # pruned after local dating: rows on two days
+        (mdir / "sessions.tsv").write_text("".join("\t".join(r[c] for c in COLUMNS) + "\n" for r in (srow, qrow)), encoding="utf8")
+        (mdir / "usage.tsv").write_text(
+            "P\t2026-01-02\tp\tmain\tanswering\t1\t3\t0\t0.1\t\n"
+            "P\t2026-01-02\tp\tmain\tediting\t1\t3\t0\t0.1\thigh\n"
+            "Q\t2026-01-01\tp\tmain\tediting\t1\t3\t0\t0.1\thigh\n"
+            "Q\t2026-01-02\tp\tmain\tediting\t1\t3\t0\t0.1\thigh\n", encoding="utf8")
+        (mdir / "inputs.tsv").write_text("P\t2026-01-02\tp\tmain\tprompt\tuser\t5\t0\n", encoding="utf8")
+        (mdir / "hooks.tsv").write_text("P\t2026-01-02\tp\tmain\tStop\th\t1\t0\t\n", encoding="utf8")
+        sys.argv = ["session-audit.py", str(ctx17), "--all"]
+        names = ("sessions", "usage", "inputs", "hooks")
+        main()
+        txt = {n: (mdir / f"{n}.tsv").read_text(encoding="utf8") for n in names}
+        data = {n: [l.split("\t") for l in txt[n].splitlines() if l and not l.startswith("#")] for n in names}
+        if [r[1] for r in data["sessions"] if r[0] == "P"] != ["2026-01-01"]:
+            bad(f"pruned sessions row not re-dated: {data['sessions']}")
+        for n in ("usage", "inputs", "hooks"):
+            if [r[1] for r in data[n] if r[0] == "P"] != ["2026-01-01"] * len([r for r in data[n] if r[0] == "P"]) \
+                    or not any(r[0] == "P" for r in data[n]):
+                bad(f"pruned {n} rows not re-dated: {data[n]}")
+        if len([r for r in data["usage"] if r[0] == "P"]) != 2:
+            bad("one usage row per key for the pruned session")
+        if sorted(r[1] for r in data["usage"] if r[0] == "Q") != ["2026-01-01", "2026-01-02"]:
+            bad(f"a pruned session already on local days keeps its per-day rows: {data['usage']}")
+        if {r[1] for r in data["usage"] if r[0] == "L"} != {"2026-01-01", "2026-01-02"}:
+            bad(f"live session must book usage on two local days: {data['usage']}")
+        if {r[1] for r in data["usage"] if r[0] == "G/agent-x"} != {"2026-01-01"}:
+            bad(f"subagent rows missing or misdated: {data['usage']}")
+        main()
+        if txt != {n: (mdir / f"{n}.tsv").read_text(encoding="utf8") for n in names}:
+            bad("second run changed the files")
+
+        # (e) A transcript outside the --days window keeps its rows byte for byte.
+        PROJECTS = t / "projects17e"
+        pe = PROJECTS / "p"
+        pe.mkdir(parents=True)
+        (pe / "old.jsonl").write_text(json.dumps(usage_msg("2026-01-02T03:30:00Z", rid="r1", tout=1)) + "\n", encoding="utf8")
+        (pe / "new.jsonl").write_text(json.dumps(usage_msg("2026-01-09T12:00:00Z", rid="r1", tout=1)) + "\n", encoding="utf8")
+        os.utime(pe / "old.jsonl", (time.time() - 10 * 86400,) * 2)
+        mdir = t / "ctx17e" / "context" / "metrics"
+        mdir.mkdir(parents=True)
+        srow.update(session="old", date="2026-01-02", started="2026-01-02T03:30:00")
+        (mdir / "sessions.tsv").write_text("\t".join(srow[c] for c in COLUMNS) + "\n", encoding="utf8")
+        (mdir / "usage.tsv").write_text("old\t2026-01-02\tp\tmain\tanswering\t1\t1\t0\t0.1\t\n", encoding="utf8")
+        sys.argv = ["session-audit.py", str(t / "ctx17e"), "--days", "1"]
+        main()
+        if not any(l.startswith("old\t2026-01-02\t") for n in ("sessions", "usage")
+                   for l in (mdir / f"{n}.tsv").read_text(encoding="utf8").splitlines()) \
+                or "old\t2026-01-01" in (mdir / "usage.tsv").read_text(encoding="utf8"):
+            bad("a row outside the --days window was rewritten")
+        ok("usage books per local day; pruned rows re-dated; out-of-window rows untouched")
+    finally:
+        PROJECTS, sys.argv, LOCAL_TZ = orig_projects, orig_argv, saved_tz17
+
     print("selftest passed")
 
 
@@ -1346,9 +1481,9 @@ def audit(outdir, cand, days, to_stdout):
 
     rows, stale = load_rows(tsv)
     usage_tsv = outdir / "usage.tsv"
-    # Keyed (session, activity, effort); rows from before effort (2026-10-30) key on "".
+    # Keyed (session, date, activity, effort); rows from before effort (2026-10-30) key on "".
     # Rows of pruned transcripts are kept: history is the point.
-    usage_rows = {(f[0], f[4], f[9] if len(f) > 9 else ""): l for l in
+    usage_rows = {(f[0], f[1], f[4], f[9] if len(f) > 9 else ""): l for l in
                   (usage_tsv.read_text(encoding="utf8").splitlines() if usage_tsv.exists() else [])
                   if l and not l.startswith("#") for f in [l.split("\t")]}
     inputs_tsv = outdir / "inputs.tsv"
@@ -1376,9 +1511,9 @@ def audit(outdir, cand, days, to_stdout):
         rows[m["session"]] = "\t".join(str(m[c]) for c in COLUMNS)
         for k in [k for k in usage_rows if k[0] in (m["session"], path.stem)]:
             del usage_rows[k]
-        for (act, eff), a in m["activity"].items():
-            usage_rows[(m["session"], act, eff)] = "\t".join([
-                m["session"], m["date"], m["project"], m["agent"], act, f"{round(a['requests'], 2):g}",
+        for (day, act, eff), a in m["usage_days"].items():
+            usage_rows[(m["session"], day, act, eff)] = "\t".join([
+                m["session"], day, m["project"], m["agent"], act, f"{round(a['requests'], 2):g}",
                 str(round(a["output"])), str(round(a["thinking"])), f"{a['cost']:.6f}", eff])
         for k in [k for k in input_rows if k[0] in (m["session"], path.stem)]:
             del input_rows[k]
@@ -1399,6 +1534,21 @@ def audit(outdir, cand, days, to_stdout):
                 seen_cand.add(fp)
                 new_cands.append(f"- [ ] {signal} | {note} {{{fp}}}")
 
+    # Rows of pruned transcripts were dated in UTC; re-date them to the local day of their start.
+    live = {session_id(p) for p in PROJECTS.rglob("*.jsonl")}
+    for sid in [k for k in rows if k != COLUMNS[0] and k not in live]:
+        f = rows[sid].split("\t")
+        day = local_day(f[2]) if len(f) > 2 and f[2] else ""
+        if not day or day == f[1]:  # already local-dated: its usage rows may span days, leave them
+            continue
+        f[1] = day
+        rows[sid] = "\t".join(f)
+        for rs in (usage_rows, input_rows, hook_rows):
+            for k in [k for k in rs if k[0] == sid]:
+                g = rs.pop(k).split("\t")
+                g[1] = day
+                rs[(k[0], day) + k[2:] if rs is usage_rows else k] = "\t".join(g)
+
     if to_stdout:
         print("\t".join(COLUMNS))
         for k in sorted(rows):
@@ -1412,12 +1562,14 @@ def audit(outdir, cand, days, to_stdout):
         "# Per-session metrics — derived, never authored\n"
         "# Written by session-audit.py from ~/.claude/projects/*.jsonl. One row per session,\n"
         "# replaced in place as a session grows. No user text is read; interruptions are counted.\n"
+        "# date = the machine's local day the session started; started/ended are UTC.\n"
         "# " + "\t".join(COLUMNS) + "\n"
     )
     write_atomic(tsv, header + "\n".join(rows[k] for k in sorted(rows)) + "\n")
     write_atomic(usage_tsv,
         "# Output tokens and dollars by activity — derived, never authored\n"
-        "# Written by session-audit.py. One row per (session, activity, effort); a request whose tool calls\n"
+        "# Written by session-audit.py. One row per (session, date, activity, effort); date = the machine's local\n"
+        "# day of the request, so a session crossing midnight has rows on both days. A request whose tool calls\n"
         "# span several activities is split evenly between them, so requests can be fractional.\n"
         f"# cost_usd = the whole request (input, cache, output) at PRICES as of {PRICES_AS_OF}.\n"
         "# effort = the request's effort level; empty for headless runs and rows from before 2026-10-30.\n"
