@@ -10,7 +10,7 @@ import { chartOf, deltaText, fmtValue, headlineUnit, markTip, median, tips } fro
 
 export const dynamic = 'force-dynamic';
 
-const COLORS = ['#1565c0', '#e08600', '#2e7d32', '#8e24aa', '#6d4c41'];
+const COLORS = [1, 2, 3, 4, 5].map((i) => `var(--chart-${i})`);
 const lineColor = (i: number) => COLORS[i % COLORS.length]!;
 
 const fmt = (x: number | null, d = 2) => (x == null ? '–' : Math.abs(x) >= 1000 ? Math.round(x).toLocaleString('en-US') : x.toFixed(d));
@@ -76,6 +76,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         Covers Mac {meta?.rows['sessions.mac'] ?? 0} · PC {meta?.rows['sessions.pc'] ?? 0} sessions ({split}) · loaded {meta ? new Date(meta.loadedAt).toLocaleString('en-CA', { timeZone: tz() }) : 'never'} · {(meta?.ragged.mac ?? 0) + (meta?.ragged.pc ?? 0)} ragged rows · {(meta?.preEffort?.mac ?? 0) + (meta?.preEffort?.pc ?? 0)} pre-effort rows
         {meta?.refused && <span className="ml-1 font-medium text-warn"> · refused: {meta.refused}</span>}
         {' · '}<a href={href(q, {}, '/sessions')} className="text-primary underline">Sessions table</a>
+        {' · '}<a href={href(q, {}, '/insights')} className="font-medium text-primary underline">Insights</a>
       </p>
       <FilterBar q={q} base="" projects={projects} models={models} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

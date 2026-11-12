@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
 import { dayAt, dayBox, fmtValue, tickFormat, xOf, xRange } from '../src/chart';
@@ -19,17 +19,38 @@ export type SparkProps = {
   height?: number;
 };
 
-const axis = { stroke: '#5f6368', grid: { stroke: 'rgba(0,0,0,0.08)', width: 1 } };
+/** "var(--x)" -> the colour it holds now; anything else unchanged. Canvas cannot read CSS variables itself. */
+const resolve = (c: string) => {
+  const m = /^var\((--[\w-]+)\)$/.exec(c);
+  return m ? getComputedStyle(document.documentElement).getPropertyValue(m[1]!).trim() || c : c;
+};
+
+/** Bumps when the theme changes (toggle or OS), so the canvas redraws in the new colours. */
+function useThemeTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setTick((t) => t + 1);
+    const mo = new MutationObserver(bump);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', bump);
+    return () => { mo.disconnect(); mq.removeEventListener('change', bump); };
+  }, []);
+  return tick;
+}
 
 export default function Spark({ dates, unit, lines, band, grey, marks, tips, markTips, reference, yRange, height = 160 }: SparkProps) {
   const el = useRef<HTMLDivElement>(null);
+  const theme = useThemeTick();
   useEffect(() => {
+    const ink = resolve('var(--chart-axis)');
+    const axis = { stroke: ink, grid: { stroke: resolve('var(--chart-grid)'), width: 1 } };
     const x = dates.map(xOf);
     const data: uPlot.AlignedData = [x, ...lines.map((l) => l.data), ...(band ? [band.lo, band.hi] : [])];
     const n = lines.length;
     const series: uPlot.Series[] = [
       {},
-      ...lines.map((l) => ({ label: l.label, stroke: l.color, width: 2, spanGaps: false, points: { show: false } })),
+      ...lines.map((l) => ({ label: l.label, stroke: resolve(l.color), width: 2, spanGaps: false, points: { show: false } })),
       ...(band ? [{ label: 'p25', stroke: 'transparent', points: { show: false } }, { label: 'p75', stroke: 'transparent', points: { show: false } }] : []),
     ];
     const tip = document.createElement('div');
@@ -50,7 +71,7 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
         ],
         padding: [8, 8, 0, 0],
         series,
-        bands: band ? [{ series: [n + 2, n + 1], fill: 'rgba(21,101,192,0.15)' }] : [],
+        bands: band ? [{ series: [n + 2, n + 1], fill: resolve('var(--chart-band)') }] : [],
         hooks: {
           init: [(u) => { u.over.appendChild(tip); }],
           setCursor: [(u) => {
@@ -67,7 +88,7 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
             tip.style.top = `${Math.max(top - tip.offsetHeight - 8, 0)}px`;
           }],
           drawClear: [(u) => {
-            u.ctx.fillStyle = 'rgba(0,0,0,0.07)';
+            u.ctx.fillStyle = resolve('var(--chart-grey)');
             grey?.forEach((g, i) => {
               if (!g) return;
               const [a, b] = dayBox(i, dates).map((v) => u.valToPos(v, 'x', true)) as [number, number];
@@ -78,7 +99,7 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
               const t = xOf(m.at);
               if (t < lo || t > hi) continue;
               const px = u.valToPos(t, 'x', true);
-              u.ctx.strokeStyle = m.color; u.ctx.lineWidth = 2; u.ctx.beginPath(); u.ctx.moveTo(px, u.bbox.top); u.ctx.lineTo(px, u.bbox.top + u.bbox.height); u.ctx.stroke();
+              u.ctx.strokeStyle = resolve(m.color); u.ctx.lineWidth = 2; u.ctx.beginPath(); u.ctx.moveTo(px, u.bbox.top); u.ctx.lineTo(px, u.bbox.top + u.bbox.height); u.ctx.stroke();
             }
           }],
           draw: [(u) => {
@@ -86,9 +107,9 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
             const py = u.valToPos(reference.value, 'y', true);
             const { ctx } = u;
             ctx.save();
-            ctx.strokeStyle = '#5f6368'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = ink; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
             ctx.beginPath(); ctx.moveTo(u.bbox.left, py); ctx.lineTo(u.bbox.left + u.bbox.width, py); ctx.stroke();
-            ctx.setLineDash([]); ctx.fillStyle = '#5f6368'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+            ctx.setLineDash([]); ctx.fillStyle = ink; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
             ctx.fillText(reference.label, u.bbox.left + u.bbox.width - 4, py - 3);
             ctx.restore();
           }],
@@ -106,6 +127,6 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
     });
     ro.observe(el.current!);
     return () => { ro.disconnect(); plot.destroy(); };
-  }, [dates, unit, lines, band, grey, marks, tips, markTips, reference, yRange, height]);
+  }, [dates, unit, lines, band, grey, marks, tips, markTips, reference, yRange, height, theme]);
   return <div ref={el} className="w-full" />;
 }

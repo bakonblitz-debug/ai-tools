@@ -16,6 +16,43 @@
   --shadow-e2: 0 2px 6px 2px rgb(0 0 0 / 0.12), 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
+/* Chart and tag colours: read by CSS (var()) and by the canvas charts (Spark resolves var() at draw time). */
+:root {
+  color-scheme: light;
+  --chart-1: #1565c0; --chart-2: #e08600; --chart-3: #2e7d32; --chart-4: #8e24aa; --chart-5: #6d4c41; --chart-6: #b3261c;
+  --chart-axis: #5f6368; --chart-grid: rgba(0, 0, 0, 0.08); --chart-band: rgba(21, 101, 192, 0.15); --chart-grey: rgba(0, 0, 0, 0.07);
+  --tag-claude: #c2185b; --tag-settings: #00838f; --tag-plugins: #6d4c41; --tag-scripts: #7b1fa2; --tag-other: #78909c;
+}
+
+/* Dark: follows the system unless the toggle pinned light; the toggle can also pin dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-primary: #8ab4f8; --color-primary-dark: #c2d7fb; --color-on-primary: #0b1d36; --color-primary-container: #1f3a5f;
+    --color-surface: #1e2228; --color-surface-dim: #121418; --color-on-surface: #e3e6ea; --color-on-surface-variant: #a5aeb8;
+    --color-outline: #3d4550; --color-warn: #f28b82;
+    --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 3px 1px rgb(0 0 0 / 0.3);
+    --shadow-e2: 0 2px 6px 2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.6);
+    --chart-1: #8ab4f8; --chart-2: #fbbc04; --chart-3: #81c995; --chart-4: #d7aefb; --chart-5: #bcaaa4; --chart-6: #f28b82;
+    --chart-axis: #a5aeb8; --chart-grid: rgba(255, 255, 255, 0.08); --chart-band: rgba(138, 180, 248, 0.18); --chart-grey: rgba(255, 255, 255, 0.06);
+    --tag-claude: #f48fb1; --tag-settings: #4dd0e1; --tag-plugins: #bcaaa4; --tag-scripts: #ce93d8; --tag-other: #b0bec5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-primary: #8ab4f8; --color-primary-dark: #c2d7fb; --color-on-primary: #0b1d36; --color-primary-container: #1f3a5f;
+  --color-surface: #1e2228; --color-surface-dim: #121418; --color-on-surface: #e3e6ea; --color-on-surface-variant: #a5aeb8;
+  --color-outline: #3d4550; --color-warn: #f28b82;
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 3px 1px rgb(0 0 0 / 0.3);
+  --shadow-e2: 0 2px 6px 2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.6);
+  --chart-1: #8ab4f8; --chart-2: #fbbc04; --chart-3: #81c995; --chart-4: #d7aefb; --chart-5: #bcaaa4; --chart-6: #f28b82;
+  --chart-axis: #a5aeb8; --chart-grid: rgba(255, 255, 255, 0.08); --chart-band: rgba(138, 180, 248, 0.18); --chart-grey: rgba(255, 255, 255, 0.06);
+  --tag-claude: #f48fb1; --tag-settings: #4dd0e1; --tag-plugins: #bcaaa4; --tag-scripts: #ce93d8; --tag-other: #b0bec5;
+}
+
 body {
   @apply bg-surface-dim font-sans text-on-surface antialiased;
 }
+
+/* uPlot draws its own axis text in a DOM layer only for legends; keep any of it legible. */
+.uplot, .u-legend { color: var(--color-on-surface); }

@@ -70,6 +70,19 @@ def excerpt(text):
 USAGE_COLUMNS = ["session", "date", "project", "agent", "activity", "requests", "output", "thinking", "cost_usd", "effort"]
 INPUT_COLUMNS = ["session", "date", "project", "agent", "source", "kind", "tokens", "images"]
 HOOK_COLUMNS = ["session", "date", "project", "agent", "event", "hook", "runs", "errors", "duration_ms"]
+TOOL_COLUMNS = ["session", "date", "project", "agent", "tool", "calls", "errors", "denials", "result_bytes"]
+SLASH = re.compile(r"<command-name>/?([\w:.-]+)</command-name>")
+
+
+def tool_key(block):
+    """Tool name as called; Skill and Agent carry what they started (a name, never input text)."""
+    name = str(block.get("name") or "?")
+    inp = block.get("input") or {}
+    if name == "Skill" and isinstance(inp, dict) and inp.get("skill"):
+        return f"Skill:{inp['skill']}"
+    if name in ("Agent", "Task") and isinstance(inp, dict):
+        return f"Agent:{inp.get('subagent_type') or 'general-purpose'}"
+    return name
 HARNESS_TOOLS = {"ToolSearch", "AskUserQuestion", "Artifact", "ArtifactComments", "ArtifactData",
                  "SubagentHandback", "SendMessage", "ScheduleWakeup", "ExitPlanMode", "EnterPlanMode",
                  "EnterWorktree", "ExitWorktree", "Monitor", "CronCreate", "CronDelete", "CronList",
@@ -306,6 +319,8 @@ def scan(path):
     """Return (metrics_row_dict, [candidate tuples]) for one transcript."""
     m = dict.fromkeys(COLUMNS, 0)
     m["hooks"] = {}  # (event, hook) -> [runs, errors, duration_ms]
+    m["tools"] = {}  # tool -> [calls, errors, denials, result_bytes]; "/name" = a slash command typed
+    tool_of = {}  # tool_use id -> tool key
     m["session"] = path.stem
     sub = path.parent.name == "subagents"  # <project>/<session>/subagents/<agent>.jsonl
     m["project"] = (path.parents[2] if sub else path.parent).name
@@ -425,7 +440,10 @@ def scan(path):
                     pending.append([(src[0], "image"), image_tokens(b, last_model), 1])
                 elif b.get("type") == "text":
                     t = b.get("text", "")
-                    s_ = ("harness", "injected") if src[0] == "prompt" and t.lstrip().startswith("<") else src
+                    if not rec.get("isCompactSummary"):  # a summary quotes old commands
+                        for cmd in SLASH.findall(t):  # the command's name only, never its arguments
+                            m["tools"].setdefault(f"/{cmd}", [0, 0, 0, 0])[0] += 1
+                    s_ =("harness", "injected") if src[0] == "prompt" and t.lstrip().startswith("<") else src
                     pending.append([s_, len(t) / CHARS_PER_TOKEN, 0])
 
         content = msg.get("content")
@@ -439,6 +457,8 @@ def scan(path):
                 where = " ".join(str(inp.get(k, "")) for k in
                                  ("file_path", "path", "command", "pattern", "notebook_path"))
                 targets[block.get("id")] = where
+                tool_of[block.get("id")] = tool_key(block)
+                m["tools"].setdefault(tool_of[block.get("id")], [0, 0, 0, 0])[0] += 1
             if block.get("type") == "tool_result":
                 body = block.get("content")
                 if isinstance(body, list):
@@ -447,6 +467,12 @@ def scan(path):
                 tid = block.get("tool_use_id", "?")
                 size = len(body)
                 m["result_bytes"] += size
+                tk = m["tools"].setdefault(tool_of.get(tid, "?"), [0, 0, 0, 0])
+                tk[3] += size
+                if body.lstrip().startswith("Permission for this action was denied"):
+                    tk[2] += 1
+                elif block.get("is_error"):
+                    tk[1] += 1
                 where = targets.get(tid, "")
                 if "www/context" in where or "context/context" in where:
                     m["context_read_bytes"] += size
@@ -1171,6 +1197,46 @@ def selftest():
     finally:
         PROJECTS, sys.argv = orig_projects, orig_argv
 
+    # 9c. tools.tsv: calls, errors, denials and result bytes per (session, tool). Skill and Agent
+    #     carry what they started; a typed slash command counts by name; no input or output text.
+    tproj = t / "projects3" / "projT"
+    tproj.mkdir(parents=True)
+    (tproj / "tl1.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"type": "user", "timestamp": "2026-01-03T10:00:00",
+         "message": {"role": "user", "content": "<command-message>x:go</command-message>\n<command-name>/x:go</command-name>\n<command-args>SECRET-ARG</command-args>"}},
+        dict(usage_msg("2026-01-03T10:00:01", tout=5, rid="r1"), message=dict(
+            usage_msg("2026-01-03T10:00:01", tout=5)["message"], content=[
+                tool_use("", "b1", "Bash", command="SECRET-CMD")["message"]["content"][0],
+                tool_use("", "b2", "Bash", command="ls")["message"]["content"][0],
+                tool_use("", "s1", "Skill", skill="dev:plan")["message"]["content"][0],
+                tool_use("", "a1", "Agent", subagent_type="Explore", prompt="SECRET-PROMPT")["message"]["content"][0],
+                tool_use("", "m1", "mcp__srv__do")["message"]["content"][0]])),
+        tool_result("2026-01-03T10:00:02", "b1", "SECRET-OUT", is_error=True),
+        tool_result("2026-01-03T10:00:02", "b2", "Permission for this action was denied", is_error=True),
+        tool_result("2026-01-03T10:00:02", "s1", "ok"),
+        tool_result("2026-01-03T10:00:02", "a1", "done"),
+        tool_result("2026-01-03T10:00:02", "m1", "boom", is_error=True),
+    ]) + "\n", encoding="utf8")
+    tctx = t / "ctx3"
+    (tctx / "context" / "metrics").mkdir(parents=True)
+    try:
+        PROJECTS = t / "projects3"
+        sys.argv = ["session-audit.py", str(tctx), "--all"]
+        tools_tsv = tctx / "context" / "metrics" / "tools.tsv"
+        for _ in (1, 2):
+            main()
+            trows = sorted(l.split("\t")[4:8] for l in tools_tsv.read_text(encoding="utf8").splitlines()
+                           if l and not l.startswith("#")) if tools_tsv.exists() else []
+            want = sorted([["/x:go", "1", "0", "0"], ["Agent:Explore", "1", "0", "0"], ["Bash", "2", "1", "1"],
+                           ["Skill:dev:plan", "1", "0", "0"], ["mcp__srv__do", "1", "1", "0"]])
+            if trows != want:
+                bad(f"tools.tsv wrong or duplicated: {trows}")
+        if "SECRET" in tools_tsv.read_text(encoding="utf8"):
+            bad("input or output text leaked into tools.tsv")
+        ok("tools.tsv counts calls, errors and denials per tool; names skills, agents and slash commands; no text")
+    finally:
+        PROJECTS, sys.argv = orig_projects, orig_argv
+
     # 10. Records are not guaranteed to be in timestamp order — sidechain and
     #     subagent messages interleave. Measured 2026-09-29: active_s exceeded
     #     duration_s in 46 of 85 real rows, up to 1.7x, inflating tokens/active-hour.
@@ -1496,6 +1562,11 @@ def audit(outdir, cand, days, to_stdout):
     hook_rows = {(f[0], f[4], f[5]): l for l in
                  (hooks_tsv.read_text(encoding="utf8").splitlines() if hooks_tsv.exists() else [])
                  if l and not l.startswith("#") for f in [l.split("\t")]}
+    tools_tsv = outdir / "tools.tsv"
+    # Keyed (session, tool); same rule.
+    tool_rows = {(f[0], f[4]): l for l in
+                 (tools_tsv.read_text(encoding="utf8").splitlines() if tools_tsv.exists() else [])
+                 if l and not l.startswith("#") for f in [l.split("\t")]}
     seen_cand = load_seen(cand, SEEN_CAND)
 
     cutoff = days * 86400
@@ -1527,6 +1598,11 @@ def audit(outdir, cand, days, to_stdout):
             hook_rows[(m["session"], ev, hk)] = "\t".join([
                 m["session"], m["date"], m["project"], m["agent"], ev, hk, str(runs), str(errs),
                 "" if ev == "Stop" else str(ms)])  # a Stop summary carries no duration
+        for k in [k for k in tool_rows if k[0] in (m["session"], path.stem)]:
+            del tool_rows[k]
+        for tool, (calls, errs, dens, nbytes) in m["tools"].items():
+            tool_rows[(m["session"], tool)] = "\t".join([
+                m["session"], m["date"], m["project"], m["agent"], tool, str(calls), str(errs), str(dens), str(nbytes)])
         touched += 1
         unpriced |= m["unpriced"]
         for signal, fp, note in cands:
@@ -1543,7 +1619,7 @@ def audit(outdir, cand, days, to_stdout):
             continue
         f[1] = day
         rows[sid] = "\t".join(f)
-        for rs in (usage_rows, input_rows, hook_rows):
+        for rs in (usage_rows, input_rows, hook_rows, tool_rows):
             for k in [k for k in rs if k[0] == sid]:
                 g = rs.pop(k).split("\t")
                 g[1] = day
@@ -1590,6 +1666,14 @@ def audit(outdir, cand, days, to_stdout):
         "# Stop: runs from stop_hook_summary only; hook * = the summary's hookErrors; duration empty.\n"
         "# " + "\t".join(HOOK_COLUMNS) + "\n"
         + "".join(hook_rows[k] + "\n" for k in sorted(hook_rows)))
+    write_atomic(tools_tsv,
+        "# Tool calls, errors and denials by session — derived, never authored\n"
+        "# Written by session-audit.py. One row per (session, tool). tool = the name as called\n"
+        "# (mcp__<server>__<tool> for MCP); Skill:<name> and Agent:<type> name what they started;\n"
+        "# /<name> = a slash command typed (calls = times, no other columns). Never inputs or output text.\n"
+        "# result_bytes = size of the results returned to the model.\n"
+        "# " + "\t".join(TOOL_COLUMNS) + "\n"
+        + "".join(tool_rows[k] + "\n" for k in sorted(tool_rows)))
 
     if new_cands:
         if not cand.exists():

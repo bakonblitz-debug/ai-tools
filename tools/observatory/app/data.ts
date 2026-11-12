@@ -5,7 +5,7 @@ import { readCommits } from '../src/overlay';
 import { applyFilters, dayList, parseQuery, type RawQ, tz } from '../src/query';
 
 export const METRICS_DIR = process.env.METRICS_DIR_IN_CONTAINER ?? '/data/metrics';
-export const TAG_COLORS: Record<string, string> = { 'CLAUDE.md': '#c2185b', settings: '#00838f', plugins: '#6d4c41', scripts: '#7b1fa2', other: '#78909c' };
+export const TAG_COLORS: Record<string, string> = { 'CLAUDE.md': 'var(--tag-claude)', settings: 'var(--tag-settings)', plugins: 'var(--tag-plugins)', scripts: 'var(--tag-scripts)', other: 'var(--tag-other)' };
 let db: ReturnType<typeof openDb> | undefined;
 
 const KINDS = { interactive: ['interactive', 'subagent'], headless: ['headless', 'hook'] } as Record<string, string[]>;
