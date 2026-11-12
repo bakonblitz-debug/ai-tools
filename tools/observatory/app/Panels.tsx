@@ -10,7 +10,7 @@ import { markTip, monthDay, stackTip, tipAnchor, tips, whenOf } from '../src/cha
 import { TAG_COLORS, type Ctx } from './data';
 
 const card = 'flex flex-col gap-1 rounded-2xl bg-surface p-4 shadow-e1';
-const SRC_COLORS = ['#1565c0', '#2e7d32', '#e08600', '#8e24aa', '#b3261c', '#6d4c41'];
+const SRC_COLORS = [1, 3, 2, 4, 6, 5].map((i) => `var(--chart-${i})`);
 const H2 = 'relative text-sm font-medium text-on-surface-variant';
 const I = (id: keyof typeof PANELS & string) => <Info title={PANELS[id]!.title} explanation={PANELS[id]!.explanation} reading={PANELS[id]!.reading} source={PANELS[id]!.source} formula={FORMULAS[id]!} />;
 const f1 = (x: number | null, d = 1) => (x == null ? '–' : x.toFixed(d));
@@ -96,7 +96,7 @@ function Stacked({ dates, series, grey, marks }: { dates: string[]; series: [str
               const mark = marks.find((m) => m.date === d);
               const lines = stackTip(i, dates, series, marks);
               return (
-                <div key={d} tabIndex={0} role="img" aria-label={lines.join(', ')} className={`group relative flex h-full flex-1 flex-col-reverse focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${grey[i] ? 'bg-[rgba(0,0,0,0.07)]' : ''}`}>
+                <div key={d} tabIndex={0} role="img" aria-label={lines.join(', ')} className={`group relative flex h-full flex-1 flex-col-reverse focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${grey[i] ? 'bg-[var(--chart-grey)]' : ''}`}>
                   {series.map(([name, v], k) => v[i] ? <div key={name} style={{ height: `${(v[i]! / max) * 100}%`, backgroundColor: SRC_COLORS[k % SRC_COLORS.length] }} /> : null)}
                   {mark && <div className="absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: mark.color }} />}
                   <div className={`pointer-events-none absolute bottom-full z-10 hidden w-max max-w-[min(22rem,50vw)] whitespace-pre-line rounded bg-surface px-2 py-1 text-xs text-on-surface shadow-e2 group-hover:block group-focus:block ${align[tipAnchor(i, n)]}`}>{lines.join('\n')}</div>
@@ -144,7 +144,7 @@ export function OtelPanels({ ctx }: { ctx: Ctx }) {
     <>
       <section className={card}>
         <h2 className={H2}>Telemetry coverage (OTel api_request / transcript requests){I('coverage')}</h2>
-        <Spark dates={dates} unit="share" tips={tips({ dates, unit: 'share', lines: [{ label: 'coverage', data: cov.combined }] }, marks)} lines={[{ label: 'coverage', data: cov.combined, color: '#1565c0' }]} grey={cov.grey} marks={marks} markTips={marks.map(markTip)} height={160} />
+        <Spark dates={dates} unit="share" tips={tips({ dates, unit: 'share', lines: [{ label: 'coverage', data: cov.combined }] }, marks)} lines={[{ label: 'coverage', data: cov.combined, color: 'var(--chart-1)' }]} grey={cov.grey} marks={marks} markTips={marks.map(markTip)} height={160} />
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr className="text-left text-on-surface-variant"><th>Day</th><th>Machine</th><th className="text-right">OTel</th><th className="text-right">Transcript</th><th className="text-right">Coverage</th></tr></thead>
           <tbody>
