@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { dayAt, dayBox, fmtValue, tickFormat, xOf, xRange } from '../src/chart';
+import { DAY_S, dayAt, dayBox, fmtValue, tickFormat, xOf, xRange } from '../src/chart';
 import type { Mark } from '../src/chart';
 
 export type SparkProps = {
@@ -17,6 +17,7 @@ export type SparkProps = {
   reference?: { value: number; label: string }; // dashed median line
   yRange?: [number, number];
   height?: number;
+  bars?: boolean; // daily counts: one bar per day instead of a line
 };
 
 /** "var(--x)" -> the colour it holds now; anything else unchanged. Canvas cannot read CSS variables itself. */
@@ -39,18 +40,23 @@ function useThemeTick() {
   return tick;
 }
 
-export default function Spark({ dates, unit, lines, band, grey, marks, tips, markTips, reference, yRange, height = 160 }: SparkProps) {
+export default function Spark({ dates, unit, lines, band, grey, marks, tips, markTips, reference, yRange, height = 160, bars = false }: SparkProps) {
   const el = useRef<HTMLDivElement>(null);
   const theme = useThemeTick();
   useEffect(() => {
     const ink = resolve('var(--chart-axis)');
     const axis = { stroke: ink, grid: { stroke: resolve('var(--chart-grid)'), width: 1 } };
-    const x = dates.map(xOf);
+    // points sit mid-day so a bar fills its own day; the cursor still maps by day start
+    const x0 = xOf(dates[0]!);
+    const x = dates.map((d) => xOf(d) + DAY_S / 2);
     const data: uPlot.AlignedData = [x, ...lines.map((l) => l.data), ...(band ? [band.lo, band.hi] : [])];
     const n = lines.length;
     const series: uPlot.Series[] = [
       {},
-      ...lines.map((l) => ({ label: l.label, stroke: resolve(l.color), width: 2, spanGaps: false, points: { show: false } })),
+      ...lines.map((l): uPlot.Series => (bars
+        ? { label: l.label, stroke: resolve(l.color), fill: resolve(l.color), width: 0, paths: uPlot.paths.bars!({ size: [0.7, 40] }), points: { show: false } }
+        // points on: a day with data between empty days is otherwise invisible
+        : { label: l.label, stroke: resolve(l.color), width: 2, spanGaps: false, points: { show: true, size: 4 } })),
       ...(band ? [{ label: 'p25', stroke: 'transparent', points: { show: false } }, { label: 'p75', stroke: 'transparent', points: { show: false } }] : []),
     ];
     const tip = document.createElement('div');
@@ -63,8 +69,8 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
       {
         width: el.current!.clientWidth, height, legend: { show: false },
         tzDate: (ts) => uPlot.tzDate(new Date(ts * 1e3), 'UTC'),
-        cursor: { points: { show: true }, drag: { x: false, y: false }, dataIdx: (_u, _s, _c, xv) => dayAt(xv, x[0]!, dates.length) },
-        scales: { x: { time: true, range: () => xRange(dates) }, y: yRange ? { range: () => yRange } : {} },
+        cursor: { points: { show: true }, drag: { x: false, y: false }, dataIdx: (_u, _s, _c, xv) => dayAt(xv, x0, dates.length) },
+        scales: { x: { time: true, range: () => xRange(dates) }, y: yRange ? { range: () => yRange } : bars ? { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } : {} },
         axes: [
           { ...axis, values: tickFormat(dates.length) },
           { ...axis, space: 30, values: (_u, ts) => ts.map((v) => fmtValue(v, unit)) },
@@ -99,7 +105,14 @@ export default function Spark({ dates, unit, lines, band, grey, marks, tips, mar
               const t = xOf(m.at);
               if (t < lo || t > hi) continue;
               const px = u.valToPos(t, 'x', true);
-              u.ctx.strokeStyle = resolve(m.color); u.ctx.lineWidth = 2; u.ctx.beginPath(); u.ctx.moveTo(px, u.bbox.top); u.ctx.lineTo(px, u.bbox.top + u.bbox.height); u.ctx.stroke();
+              // a change marker, not data: faint dashed line with a small tag-coloured flag at the top
+              const r = uPlot.pxRatio, c = resolve(m.color), ctx = u.ctx;
+              ctx.save();
+              ctx.globalAlpha = 0.5; ctx.strokeStyle = c; ctx.lineWidth = r; ctx.setLineDash([3 * r, 3 * r]);
+              ctx.beginPath(); ctx.moveTo(px, u.bbox.top); ctx.lineTo(px, u.bbox.top + u.bbox.height); ctx.stroke();
+              ctx.globalAlpha = 1; ctx.fillStyle = c;
+              ctx.beginPath(); ctx.moveTo(px - 4 * r, u.bbox.top); ctx.lineTo(px + 4 * r, u.bbox.top); ctx.lineTo(px, u.bbox.top + 6 * r); ctx.fill();
+              ctx.restore();
             }
           }],
           draw: [(u) => {

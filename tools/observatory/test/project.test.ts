@@ -16,6 +16,7 @@ it.each([
   ['-Users-alice', '~'],
   ['C--Users-alice', '~'],
   ['-Users-bob-other', '-Users-bob-other'],
+  ['-private-var-folders--q-abc123-T-epicerie-claude', 'epicerie (job)'],
 ])('normalizes %s', (raw, want) => expect(normalizeProject(raw, env)).toBe(want));
 
 it.each([
@@ -24,4 +25,5 @@ it.each([
   ['C--Users-alice-AppData-Local-Temp-foo', true],
   ['C--WINDOWS-system32', true],
   ['-Users-alice-www-projects-epicerie', false],
+  ['-private-var-folders--q-abc123-T-epicerie-claude', false],
 ])('scratch %s', (raw, want) => expect(isScratch(raw)).toBe(want));

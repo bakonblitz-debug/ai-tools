@@ -36,7 +36,7 @@ export function fmtValue(x: number | null, unit: string): string {
   if (x === null) return '–';
   if (unit === 'share') return `${Math.round(x * 100)}%`;
   if (unit === 'ratio') return x.toFixed(2);
-  if (unit === 'h/day') return `${x.toFixed(1)} h`;
+  if (unit === 'h/day') return `${x.toFixed(x > 0 && x < 1 ? 2 : 1)} h`;
   if (unit.startsWith('per ')) return x.toFixed(1);
   if (Math.abs(x) >= 10000) return `${Math.round(x / 1000)}k`;
   return Number.isInteger(x) ? String(x) : x.toFixed(1);
