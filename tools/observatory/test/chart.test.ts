@@ -29,6 +29,8 @@ it('formats values by unit', () => {
   expect(fmtValue(0.75, 'share')).toBe('75%');
   expect(fmtValue(0.8234, 'ratio')).toBe('0.82');
   expect(fmtValue(2.14, 'h/day')).toBe('2.1 h');
+  expect(fmtValue(0.14, 'h/day')).toBe('0.14 h');
+  expect(fmtValue(0, 'h/day')).toBe('0.0 h');
   expect(fmtValue(3.44, 'per 100 requests')).toBe('3.4');
   expect(fmtValue(1.26, 'per hour')).toBe('1.3');
   expect(fmtValue(12345, 'tokens')).toBe('12k');

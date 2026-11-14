@@ -21,7 +21,7 @@ export function Overlays({ ctx }: { ctx: Ctx }) {
   const toggle = (t: string) => href(q, { overlay: q.overlay.includes(t) ? q.overlay.filter((x) => x !== t) : [...q.overlay, t] });
   return (
     <section className={card}>
-      <h2 className={H2}>Harness changes (vertical lines on the charts){I('overlays')}</h2>
+      <h2 className={H2}>Harness changes (dashed lines with a flag on the charts; not data){I('overlays')}</h2>
       <div className="flex flex-wrap gap-3 text-sm">
         {TAGS.map((t) => (
           <a key={t} href={toggle(t)} className={q.overlay.includes(t) ? 'font-medium' : 'text-on-surface-variant line-through'}>
@@ -98,7 +98,7 @@ function Stacked({ dates, series, grey, marks }: { dates: string[]; series: [str
               return (
                 <div key={d} tabIndex={0} role="img" aria-label={lines.join(', ')} className={`group relative flex h-full flex-1 flex-col-reverse focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${grey[i] ? 'bg-[var(--chart-grey)]' : ''}`}>
                   {series.map(([name, v], k) => v[i] ? <div key={name} style={{ height: `${(v[i]! / max) * 100}%`, backgroundColor: SRC_COLORS[k % SRC_COLORS.length] }} /> : null)}
-                  {mark && <div className="absolute inset-x-0 top-0 h-0.5" style={{ backgroundColor: mark.color }} />}
+                  {mark && <div className="pointer-events-none absolute inset-y-0 left-1/2 border-l border-dashed opacity-50" style={{ borderColor: mark.color }} />}
                   <div className={`pointer-events-none absolute bottom-full z-10 hidden w-max max-w-[min(22rem,50vw)] whitespace-pre-line rounded bg-surface px-2 py-1 text-xs text-on-surface shadow-e2 group-hover:block group-focus:block ${align[tipAnchor(i, n)]}`}>{lines.join('\n')}</div>
                 </div>
               );
