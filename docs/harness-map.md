@@ -215,7 +215,7 @@ These are part of the harness but live elsewhere. The context repo files are pri
 | Where | What | Written by | Read by |
 |---|---|---|---|
 | `~/.claude/settings.json` | Hook wiring, `statusLine`, `enabledPlugins`, `autoMemoryDirectory`, `autoCompactWindow` | `install.py`, or by hand | Claude Code |
-| `~/.zshrc` (or PowerShell profile) | `claude` wrapper that opens with `/bacon:greet` | by hand, from `docs/setup.md` | your shell |
+| `~/.zshrc` (or PowerShell profile) | `claude` wrapper that opens with `/bacon:greet` (`claude -f` / `--fresh` skips it) | by hand, from `docs/setup.md` | your shell |
 | `<workspace>/CLAUDE.md` | Rules every session loads first | by hand | Claude Code |
 | `<context>/ORIENT.md` | Orientation printed at session start | by hand | `claude-bootstrap.sh` |
 | `<context>/PLANNING-MINDSET.md` | Plan-mode priming | by hand | `plan-mindset.sh` |
