@@ -93,22 +93,30 @@ Restart Claude Code after installing; plugins and skills are read at session sta
 
 Claude can't speak first in an interactive session, but it can if the session starts with a prompt.
 These wrappers make plain `claude` start with `/bacon:greet`, which offers what is open today as
-picker options. Any argument (`-p`, `--resume`, a prompt of your own) passes straight through.
+picker options. `claude -f` (or `claude --fresh`) skips the greeting and starts a blank session; whatever follows the flag goes to `claude` as usual. Any other argument (`-p`, `--resume`, a prompt of your own) passes straight through. The flag only counts in first position.
 
 zsh (`~/.zshrc`) or bash (`~/.bashrc`):
 
 ```bash
-# Plain `claude` opens with the session greeting; any argument passes straight through.
-claude() { if [ $# -eq 0 ]; then command claude "/bacon:greet"; else command claude "$@"; fi; }
+# Plain `claude` opens with the session greeting; `claude -f` / `claude --fresh` skips it;
+# any other argument passes straight through.
+claude() {
+  if [ $# -eq 0 ]; then command claude "/bacon:greet"
+  elif [ "$1" = "-f" ] || [ "$1" = "--fresh" ]; then shift; command claude "$@"
+  else command claude "$@"; fi
+}
 ```
 
 PowerShell (`notepad $PROFILE`):
 
 ```powershell
-# Plain `claude` opens with the session greeting; any argument passes straight through.
+# Plain `claude` opens with the session greeting; `claude -f` / `claude --fresh` skips it;
+# any other argument passes straight through.
 function claude {
   $exe = (Get-Command claude -CommandType Application | Select-Object -First 1).Source
-  if ($args.Count -eq 0) { & $exe '/bacon:greet' } else { & $exe @args }
+  if ($args.Count -eq 0) { & $exe '/bacon:greet' }
+  elseif ($args[0] -in '-f', '--fresh') { $rest = @($args | Select-Object -Skip 1); & $exe @rest }
+  else { & $exe @args }
 }
 ```
 

@@ -232,7 +232,7 @@ const N = [
    why:"Every hook in this repo does nothing until it is wired here. Keeping the wiring in one file makes it easy to see what runs.",
    edit:"turn a hook on or off, or change its timeout. On a new machine let <code>scripts/install.py</code> write it."},
   {id:"zshrc", path:"~/.zshrc", kind:"entry", sub:"claude → /bacon:greet wrapper",
-   what:"A shell function: plain <code>claude</code> becomes <code>claude \"/bacon:greet\"</code>; any argument passes straight through. PowerShell has the same in <code>$PROFILE</code>.",
+   what:"A shell function: plain <code>claude</code> becomes <code>claude \"/bacon:greet\"</code>; <code>claude -f</code> / <code>--fresh</code> skips the greeting; any other argument passes straight through. PowerShell has the same in <code>$PROFILE</code>.",
    why:"Claude cannot speak first in an interactive session, but it can if the session starts with a prompt.",
    edit:"stop the greeting (delete the function). A terminal tab opened before the edit keeps the old behaviour until <code>source ~/.zshrc</code>.",
    run:"type claude"},
