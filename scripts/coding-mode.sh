@@ -7,9 +7,10 @@
 #
 # Merges into an existing settings.json and keeps every other key. The set is the coding mode of
 # docs/coding-standards.md: dev-loop (architect/ouroboros/handoff + the coding-rules hook),
-# ponytail, superpowers. User settings keep them off, so only folders that opt in load them.
+# ponytail, superpowers, and Anthropic's code-review, code-simplifier, feature-dev and
+# code-modernization (added 2026-11-20). User settings keep them off, so only folders that opt in load them.
 set -u
-CODING_SET="dev-loop@dev-loop ponytail@harness superpowers@claude-plugins-official"
+CODING_SET="dev-loop@dev-loop ponytail@harness superpowers@claude-plugins-official code-review@claude-plugins-official code-simplifier@claude-plugins-official feature-dev@claude-plugins-official code-modernization@claude-plugins-official"
 # Plugins that left the set: --check fails while a folder still lists one, a write removes it.
 # ponytail@ponytail: ponytail moved to the harness marketplace (projects/plugins/vendor) 2026-11-05.
 RETIRED="bacon-dev@ai-tools ponytail@ponytail"
@@ -64,7 +65,7 @@ selftest() {
   me "$t/p" --check >/dev/null; ck "a false value counts as missing" "$?" 1
   me "$t/p" >/dev/null
   out=$("$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["model"],d["hooks"]["a"],d["enabledPlugins"]["other@m"],d["enabledPlugins"]["ponytail@harness"],len(d["enabledPlugins"]))' "$s")
-  ck "merge keeps other keys and flips the false one" "$out" "x 1 True True 4"
+  ck "merge keeps other keys and flips the false one" "$out" "x 1 True True 8"
   cp "$s" "$t/before"; me "$t/p" >/dev/null; cmp -s "$s" "$t/before"; ck "second run is a no-op (idempotent)" "$?" 0
   echo '{bad' > "$s"; me "$t/p" >/dev/null; ck "unreadable settings.json: exit 2, file untouched" "$?:$(cat "$s")" "2:{bad"
   printf '{"enabledPlugins":{"dev-loop@dev-loop":true,"ponytail@ponytail":true,"superpowers@claude-plugins-official":true,"bacon-dev@ai-tools":true}}\n' > "$s"
@@ -72,7 +73,7 @@ selftest() {
   case $rc:$out in 1:*retired:bacon-dev@ai-tools*retired:ponytail@ponytail*|1:*retired:ponytail@ponytail*retired:bacon-dev@ai-tools*) ;; *) ck "retired plugins still listed fail the check, named" "$rc:$out" "1:…retired:bacon-dev@ai-tools retired:ponytail@ponytail" ;; esac
   me "$t/p" >/dev/null
   out=$("$PY" -c 'import json,sys;print(sorted(json.load(open(sys.argv[1]))["enabledPlugins"]))' "$s")
-  ck "a write removes the retired plugins" "$out" "['dev-loop@dev-loop', 'ponytail@harness', 'superpowers@claude-plugins-official']"
+  ck "a write removes the retired plugins" "$out" "['code-modernization@claude-plugins-official', 'code-review@claude-plugins-official', 'code-simplifier@claude-plugins-official', 'dev-loop@dev-loop', 'feature-dev@claude-plugins-official', 'ponytail@harness', 'superpowers@claude-plugins-official']"
   [ "$fail" = 0 ] && echo "coding-mode selftest OK"
   return $fail
 }
