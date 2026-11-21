@@ -2,6 +2,10 @@
   "enabledPlugins": {
     "dev-loop@dev-loop": true,
     "superpowers@claude-plugins-official": true,
-    "ponytail@harness": true
+    "ponytail@harness": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "code-modernization@claude-plugins-official": true
   }
 }
