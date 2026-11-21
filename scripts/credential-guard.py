@@ -110,8 +110,9 @@ PLACEHOLDERS = {"null", "none", "nil", "true", "false", "undefined", "string", "
 MASKED = ("credential-guard: %d value%s withheld (%s); key names kept. To show a key's value, "
           "he adds it to ai-tools/config/credential-guard.json.")
 NOTE = "[credential-guard: %d value%s withheld (%s)]"
-PROMPT_BLOCK = ("credential-guard: this prompt looks like it holds %d secret or personal value%s, so it "
-                "was not sent. Remove them, or start the prompt with pii-ok (or secret-ok) to send it as it is.")
+PROMPT_ROWS = 5  # lines listed in a block notice; the rest are counted
+_TAG = re.compile(r"<(withheld|email|phone|sin|ssn|card|iban|bank-account|postal-code|name|address)>")
+_FILE_REF = re.compile(r"[\w.\\/-]+\.[A-Za-z]\w{0,5}:\d+(?:-\d+)?")
 FAILED = "credential-guard: output withheld (internal error)."
 
 
@@ -569,6 +570,50 @@ def _plural(n):
     return "" if n == 1 else "s"
 
 
+def prompt_report(prompt, cfg):
+    """The block notice for a prompt, or None if it is clean: source, then one row per line
+    with its kind, any file:line on it, and a short excerpt. Only masked text is quoted."""
+    lines = prompt.split("\n")
+    is_task = prompt.lstrip().startswith("<task-notification>")
+    base = next((i for i, l in enumerate(lines) if "<result>" in l), 0) if is_task else 0
+    rows, total = [], 0
+    for i, line in enumerate(lines):
+        masked, k = scan_line(line)
+        masked, k2 = pii_line(masked, cfg)
+        if not k + k2:
+            continue
+        total += k + k2
+        literal = [m.group(1) for m in _TAG.finditer(line)]  # tags already in the text are not hits
+        hits = []
+        for m in _TAG.finditer(masked):
+            if m.group(1) in literal:
+                literal.remove(m.group(1))
+            else:
+                hits.append(m)
+        kinds = sorted({"secret" if m.group(1) == "withheld" else m.group(1) for m in hits}) or ["secret"]
+        at = max(0, hits[0].start() - 24) if hits else 0
+        excerpt = " ".join(masked[at:at + 64].split())
+        ref = _FILE_REF.search(masked)
+        rows.append("  line %-4d %-14s %s...%s..." % (i - base + 1 if is_task and i >= base else i + 1,
+                                                      ",".join(kinds), ref.group(0) + "  " if ref else "", excerpt))
+    if not total:
+        return None
+    if is_task:
+        name = re.search(r'<summary>Agent "(.*?)"', prompt)
+        task = re.search(r"<task-id>([^<]+)</task-id>", prompt)
+        source = 'agent "%s" (task %s), line numbers count from its result' % (
+            name.group(1) if name else "unknown", task.group(1)[:8] if task else "?")
+        action = "Its result did not reach Claude. To pass it on, send it in a prompt starting with secret-ok."
+    else:
+        source = "your prompt"
+        action = "Remove them, or start the prompt with secret-ok (or pii-ok) to send it as is."
+    out = ["credential-guard: not sent, %d value%s on %d line%s" % (total, _plural(total), len(rows), _plural(len(rows))),
+           "  from: " + source] + rows[:PROMPT_ROWS]
+    if len(rows) > PROMPT_ROWS:
+        out.append("  and %d more line%s" % (len(rows) - PROMPT_ROWS, _plural(len(rows) - PROMPT_ROWS)))
+    return "\n".join(out + ["  " + action])
+
+
 def handle(event, cfg):
     """The hook's reply as a dict, or None to stay silent."""
     ev = event.get("hook_event_name")
@@ -578,9 +623,10 @@ def handle(event, cfg):
         prompt = event.get("prompt")
         if not isinstance(prompt, str) or prompt.lstrip().lower().startswith(("secret-ok", "pii-ok")):
             return None
-        n = sum(scan_line(line)[1] + pii_line(line, cfg)[1] for line in prompt.split("\n"))
+        report = prompt_report(prompt, cfg)
         del REVIEW[:]  # a prompt's log-only hits are his own text: not logged
-        return {"decision": "block", "reason": PROMPT_BLOCK % (n, _plural(n))} if n else None
+        # continue:false, because decision:block makes Claude Code print the whole prompt after the reason.
+        return {"continue": False, "stopReason": report} if report else None
 
     ti = event.get("tool_input") or {}
     if not isinstance(ti, dict):
@@ -906,12 +952,22 @@ def selftest():
     def prompt(text):
         return handle({"hook_event_name": "UserPromptSubmit", "prompt": text}, cfg)
     p = prompt("use this key: gh" + "p_" + "a1B2" * 9)
-    check("prompt blocked", (p or {}).get("decision") == "block" and "a1B2" not in json.dumps(p), True)
+    check("prompt blocked", (p or {}).get("continue") is False and "a1B2" not in json.dumps(p), True)
     check("prompt secret-ok", prompt("secret-ok gh" + "p_" + "a1B2" * 9), None)
     check("prompt plain", prompt("fix the DB_PASSWORD= line in .e" + "nv"), None)
-    check("prompt pii blocked", (prompt("call 514-555-0199 for me") or {}).get("decision"), "block")
+    check("prompt pii blocked", (prompt("call 514-555-0199 for me") or {}).get("continue"), False)
     check("prompt pii-ok", prompt("pii-ok call 514-555-0199 for me"), None)
     check("prompt own email", prompt("my email is " + me), None)
+    note = ('<task-notification>\n<task-id>abcdef1234567</task-id>\n<summary>Agent "Scan" finished</summary>\n'
+            "<result>clean line\nsrc/a.py:12 mail " + other + "\n</result>\n</task-notification>")
+    r = (prompt(note) or {}).get("stopReason") or ""
+    for want in ['agent "Scan"', "abcdef12", "line 2 ", "email", "src/a.py:12"]:
+        check("block notice names " + want, want in r, True)
+    check("block notice holds no value", other in r, False)
+    check("block notice has no decision key", "decision" in (prompt(note) or {}), False)
+    r = (prompt("\n".join("mail " + other for _ in range(PROMPT_ROWS + 3))) or {}).get("stopReason") or ""
+    check("block notice is capped", (r.count("  line "), "and 3 more lines" in r), (PROMPT_ROWS, True))
+    check("literal tag is not a hit", prompt("the <email> placeholder"), None)
 
     # The known-file list.
     for p in [envp + ".example", "backend/.e" + "nv.local", "./.e" + "nv", "~/.e" + "nvrc", envp + "-backup",
