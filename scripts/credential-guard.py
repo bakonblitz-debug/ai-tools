@@ -15,24 +15,33 @@ A Claude Code hook, run locally (no network, no model). Registered on:
                                    (vendor tokens, private keys, base64 app keys, JWTs,
                                    user:pass@ URLs, PASSWORD/SECRET/TOKEN/_KEY=value lines
                                    and quoted literals in code).
+  PreToolUse  Write|Edit|NotebookEdit
+                                a new hardcoded secret is denied: secrets live in .env, a
+                                database or a secret file. "write-ok" allows one reviewed
+                                write. A mask is never written back over a real value.
   UserPromptSubmit              a prompt holding a secret shape is blocked before it is
-                                sent; start it with "secret-ok" to send it anyway.
-The notices name counts only, never a value. Nothing to mask: prints nothing.
+                                sent; start it with "secret-ok" to send it anyway. Agent
+                                reports use the strict detector, so quoted code passes.
+The notices name counts, files and lines, never a value. Nothing to mask: prints nothing.
 Allow-lists: ../config/credential-guard.json. Plan: ~/www/.plans/credential-guard/PLAN.md
 
 Usage: credential-guard.py          (hook; event read from stdin)
        credential-guard.py --selftest
+       credential-guard.py --audit <repo>...   (read-only: file, line and kind, never a value)
 """
 import copy
 import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "config", "credential-guard.json")
@@ -99,7 +108,12 @@ PK_INLINE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-
 URL_CRED = re.compile(r"\b([a-z][a-z0-9+.-]*://[^\s:/@'\"]+:)([^\s@/'\"]+)@", re.I)
 SECRET_KEY = re.compile(r"pass(?:word|wd|phrase)|secret|token|api[_-]?key|private[_-]?key|app[_-]?key"
                         r"|access[_-]?key|credential|dsn|[_-]key$", re.I)
-QUOTED_KV = re.compile(r"""(["']?)([\w.-]*)\1(\s*(?:=>|[:=,])\s*)(["'])([^"'\n]*)\4""")
+QUOTED_KV = re.compile(r"""(["']?)([\w.-]*)\1(\s*(?:=>|[:=])\s*)(["'])([^"'\n]*)\4""")
+# define('KEY', 'value') and ['key', 'value']. Separate from QUOTED_KV: a comma there would pair
+# one entry's value with the next entry's key, and the real value after it went unmasked.
+CALL_KV = re.compile(r"""[(\[]\s*(["'])([\w.-]+)\1(\s*,\s*)(["'])([^"'\n]*)\4""")
+TOKEN_COUNT_KEY = re.compile(r"tokens|token_count|(?:input|output|total|prompt|completion|cache\w*)_tokens", re.I)
+TOKEN_FORMULA = re.compile(r"[a-z_]+(?:\+[a-z_]+)+")
 INLINE_EQ = re.compile(r"(?<![\w.-])([\w.-]+)(\s*=\s*)([^\s'\"&,;]*)")
 YAML_KV = re.compile(r"^(\s*(?:[+-]\s*)?(?:#\s*)?)([\w.-]+)(:\s+)([^\s'\"#,;][^\s#,;]*)\s*$")
 PLACEHOLDERS = {"null", "none", "nil", "true", "false", "undefined", "string", "number", "boolean",
@@ -251,12 +265,14 @@ def scan_line(line):
     spans = [m.span(2) for m in URL_CRED.finditer(line) if not _placeholder(m.group(2))]
     line, k = _sub_spans(line, spans)
     n += k
-    spans = [m.span(5) for m in QUOTED_KV.finditer(line)
-             if _is_secret_key(m.group(2)) and _secret_literal(m.group(5))]
+    spans = {m.span(5) for rx in (QUOTED_KV, CALL_KV) for m in rx.finditer(line)
+             if _is_secret_key(m.group(2)) and _secret_literal(m.group(5))}
     line, k = _sub_spans(line, spans)
     n += k
     spans = [m.span(3) for m in INLINE_EQ.finditer(line)
-             if _is_secret_key(m.group(1)) and _secret_bare(m.group(3), m.group(2) != "=")]
+             if _is_secret_key(m.group(1)) and _secret_bare(m.group(3), m.group(2) != "=")
+             and not (m.group(2) != "=" and TOKEN_COUNT_KEY.fullmatch(m.group(1))
+                      and TOKEN_FORMULA.fullmatch(m.group(3)))]
     line, k = _sub_spans(line, spans)
     n += k
     m = YAML_KV.match(line)
@@ -570,15 +586,533 @@ def _plural(n):
     return "" if n == 1 else "s"
 
 
+# ---------------------------------------------------------------- strict detector
+# scan_line masks, so a false alarm hides one value. Anything that STOPS work (an agent report,
+# a write) uses this one instead: a false alarm there loses a whole report or blocks an edit.
+_STRICT_KEY = re.compile(r"(?:^|[_.-])(?:pass|pwd)$", re.I)
+_CAMEL_KEY = re.compile(r"[a-z0-9](?:Key|Pass)$")
+_PW_KEY = re.compile(r"pass(?:word|wd|phrase)|(?:^|[_.-])(?:pass|pwd)$", re.I)
+_ALGORITHMS = {"argon2id", "argon2i", "argon2d", "bcrypt", "scrypt", "pbkdf2", "sha1", "sha256", "sha384", "sha512",
+               "md5", "hs256", "hs384", "hs512", "rs256", "rs384", "rs512", "es256", "es384", "es512", "aes-256-cbc",
+               "aes-256-gcm"}
+_WHOLE_PLACEHOLDER = re.compile(r"\$\{[^}]*\}|\$\w+|<[^<>]+>|%\w+%|\{\{.*\}\}")
+_COLON_WORDS = re.compile(r"[a-z0-9_-]+(?::[a-z0-9_-]+)+")
+_PIPE_RULES = re.compile(r"[a-z_]+(?::[^|]*)?(?:\|[a-z_]+(?::[^|]*)?)+")
+_LOWER_IDENT = re.compile(r"[a-z]+(?:[_.-][a-z]+)+")
+_NAME_PARTS = re.compile(r"[a-z0-9]+(?:[-_.:][a-z0-9]+)+")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+_CODE_IDENT = re.compile(r"[A-Za-z_$][\w$]*(?:(?:\.|->|::)[A-Za-z_$][\w$]*)*")
+STRICT_ENV = re.compile(r"""^(?P<indent>\s*)(?P<list>[-+]\s+)?(?:\#\s*)?(?P<export>export\s+)?(?P<kq>["']?)(?P<key>[\w.-]+)(?P=kq)"""
+                        r"""(?:(?P<eq>\s*=\s*)|:\s+)(?P<val>[^\s'"`\#,;()]+)\s*(?:\#.*)?$""")
+STRICT_QUOTED = re.compile(r"""(?<![\w.-])(?P<kq>["'`]?)(?P<key>[\w.-]+)(?P=kq)\s*(?:\]\s*)?"""
+                           r"""(?::\s*[\w.\[\]|<>, ]{1,40}?\s*(?==))?(?:=>|:=|=|:)\s*(?P<q>["'`])(?P<val>[^"'`\n]*)(?P=q)""")
+STRICT_INLINE = re.compile(r"""(?<![\w.-])(?P<key>[\w.-]+)(?:\s*:=\s*|=)(?P<val>[^\s'"`&,;]+)""")
+STRICT_FLAG = re.compile(r"""(?<!\S)--?(?P<key>[\w-]+)\s+(?P<val>[^\s'"`&,;-][^\s'"`&,;]*)""")
+
+
+def _strict_key(k):
+    k = k.strip("\"'`")
+    return bool(_is_secret_key(k) or _STRICT_KEY.search(k) or _CAMEL_KEY.search(k))
+
+
+def _is_path(v):
+    if "+" in v or "=" in v:
+        return False
+    for seg in re.split(r"[\\/]", v):
+        if len(seg) >= 12 and re.search("[a-z]", seg) and re.search("[A-Z]", seg) and re.search(r"\d", seg):
+            return False
+    return bool(re.match(r"/|\./|\.\./|~/|[A-Za-z]:[\\/]", v)
+                or re.fullmatch(r"[\w.-]+(?:[\\/][\w.-]+)*\.[A-Za-z][A-Za-z0-9]{0,5}", v))
+
+
+def _strict_placeholder(v):
+    """True only when the whole value is clearly not a secret. Not _placeholder: its first-character
+    rule would pass a generated password that happens to start with a symbol."""
+    low = v.lower()
+    return (not v or low in PLACEHOLDERS or low in _ALGORITHMS or _WHOLE_PLACEHOLDER.fullmatch(v) is not None
+            or re.match(r"</?[A-Za-z][\w-]*>", v) is not None  # markup right after "KEY=" in a doc
+            or re.fullmatch(r"[x*.#-]+", low) is not None or low.startswith(("your", "change", "example"))
+            or re.match(r"[a-z][a-z0-9+.-]*://", low) is not None or re.search(r"\s", v) is not None
+            or _COLON_WORDS.fullmatch(v) is not None or _PIPE_RULES.fullmatch(v) is not None or _is_path(v))
+
+
+def _strict_value(key, v, dotenv=False, report=False):
+    """report: an agent report quoting code. Its tool output was already masked, so a short simple
+    literal there is an example like a test password, and stopping would lose the whole report."""
+    if _strict_placeholder(v) or (not dotenv and _LOWER_IDENT.fullmatch(v)):
+        return False
+    letter, digit = re.search("[A-Za-z]", v), re.search(r"\d", v)
+    if _PW_KEY.search(key.strip("\"'`")):
+        if report and not dotenv and len(v) < 12 and not (re.search("[a-z]", v) and re.search("[A-Z]", v) and digit):
+            return False
+        return len(v) >= 8 and bool(letter) and bool(digit or re.search(r"[^\w]|_", v))
+    if len(v) < 16 or not letter or not digit:
+        return False
+    return bool(_UUID.fullmatch(v)) or not _NAME_PARTS.fullmatch(v)
+
+
+def _code_value(v):
+    """An unquoted value that reads as code: a variable, a property, the start of a call."""
+    head = re.split(r"[(\[{]", v.rstrip(")]}"), 1)[0]
+    if not _CODE_IDENT.fullmatch(head):
+        return False
+    for seg in re.split(r"\.|->|::", head):  # a random string is not a variable name
+        if len(seg) >= 10 and re.search(r"\d", seg) and (len(seg) >= 16 or (re.search("[a-z]", seg) and re.search("[A-Z]", seg))):
+            return False
+    return True
+
+
+def strict_hits(line, in_test=False, prose=False, report=False):
+    """[(start, end, kind)]: values on this line that look like real secrets. in_test skips keyed
+    values; prose (a sentence in a doc) keeps only shapes and line-anchored config forms."""
+    spans = []
+
+    def add(a, b, kind):
+        if a < b and all(b <= s or a >= e for s, e, _ in spans):
+            spans.append((a, b, kind))
+
+    for rx in TOKENS:
+        for m in rx.finditer(line):
+            add(m.start(), m.end(), "token")
+    for m in PK_INLINE.finditer(line):
+        add(m.start(), m.end(), "private-key")
+    for m in URL_CRED.finditer(line):
+        if not _strict_placeholder(m.group(2)):
+            add(m.start(2), m.end(2), "url-password")
+    if in_test:
+        return sorted(spans)
+    m = STRICT_ENV.match(line)
+    if m and _strict_key(m.group("key")):
+        v, eq = m.group("val"), m.group("eq")
+        dotenv = eq == "=" and (not m.group("indent") or bool(m.group("list"))) or bool(m.group("export"))
+        is_code = eq is not None and not dotenv
+        if not (is_code and _code_value(v)) and _strict_value(m.group("key"), v, dotenv, report):
+            add(m.start("val"), m.end("val"), "hardcoded-secret")
+    if prose:
+        return sorted(spans)
+    for m in STRICT_QUOTED.finditer(line):
+        if m.group("key").lower() == "pass" and not m.group("kq"):
+            continue  # the English word, as in "cannot pass: `x`"
+        if _strict_key(m.group("key")) and _strict_value(m.group("key"), m.group("val"), False, report):
+            add(m.start("val"), m.end("val"), "hardcoded-secret")
+    for m in CALL_KV.finditer(line):
+        if m.group(2).lower() != "pass" and _strict_key(m.group(2)) \
+                and _strict_value(m.group(2), m.group(5), False, report):  # ("PASS", "FAIL_2") is a status list
+            add(m.start(5), m.end(5), "hardcoded-secret")
+    for rx in (STRICT_INLINE, STRICT_FLAG):
+        for m in rx.finditer(line):
+            v = m.group("val").rstrip(")]}")
+            if _strict_key(m.group("key")) and not _code_value(v) and _strict_value(m.group("key"), v, False, report):
+                add(m.start("val"), m.start("val") + len(v), "hardcoded-secret")
+    return sorted(spans)
+
+
+def strict_line(line, in_test=False, prose=False, report=False):
+    """(line with the strict hits masked, how many)."""
+    hits = strict_hits(line, in_test, prose, report)
+    return _sub_spans(line, [(a, b) for a, b, _ in hits])
+
+
+# ---------------------------------------------------------------- write block
+# His rule (2026-11-21): secrets live in .env, a database or a secret file, never in code.
+STATE_DIR = os.path.join(tempfile.gettempdir(), "credential-guard")  # local, never the SMB share
+WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
+PENDING_TTL = 3600
+ARMED_TTL = 600
+MAX_COMPARE = 1024 * 1024  # mask_text on more than this could pass the 10 s hook timeout
+PEM_MAX_LINES = 64
+_ENV_STORE = re.compile(r"\.envrc|\.env(?:\.(?:local|prod|production|stage|staging|dev|development|test|testing|ci)(?:\.local)?)?")
+_OTHER_STORE = re.compile(r"\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd")
+_MASK_TAG = re.compile(r"<(line withheld|withheld|email|phone|sin|ssn|card|iban|bank-account|postal-code|name|address)>")
+_SECRET_TAGS = {"withheld", "line withheld"}
+_FENCE = re.compile(r"\s*(?:```|~~~)")
+WRITE_FAILED = "credential-guard: the write check failed, so this write was not checked for secrets."
+
+
+def _git(cwd, *args, timeout=3):
+    """(exit code, stdout), or (None, "") if git could not run. Read-only calls only: the two
+    settings let git answer in repos on the share, which it otherwise refuses as dubious ownership."""
+    try:
+        r = subprocess.run(["git", "-c", "safe.directory=*", "-c", "core.fsmonitor=false", "-C", cwd] + list(args),
+                           capture_output=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None, ""
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def _anchor(path):
+    """(nearest existing folder, the path relative to it), so a file in a new folder can be asked about."""
+    p = os.path.abspath(path)
+    d = os.path.dirname(p)
+    while not os.path.isdir(d):
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None, None
+        d = parent
+    return d, os.path.relpath(p, d).replace("\\", "/")
+
+
+def secret_store(path):
+    """True when this file is a real secret store: the right name, git-ignored and untracked."""
+    base = os.path.basename(path)
+    is_env = _ENV_STORE.fullmatch(base) is not None
+    if not is_env and not _OTHER_STORE.fullmatch(base):
+        return False
+    cwd, rest = _anchor(path)
+    if not cwd:
+        return is_env
+    ignored, _ = _git(cwd, "check-ignore", "-q", "--", rest)
+    tracked, _ = _git(cwd, "ls-files", "--error-unmatch", "--", rest)
+    if ignored not in (0, 1) or tracked not in (0, 1):
+        return is_env  # git cannot answer here
+    return ignored == 0 and tracked == 1
+
+
+def _test_rel(rel):
+    parts = rel.split("/")
+    return (any(p in ("test", "tests", "__tests__", "fixtures") for p in parts[:-1])
+            or re.search(r"\.(?:test|spec)\.[cm]?[jt]sx?$", parts[-1]) is not None)
+
+
+def _in_test(path):
+    """Judged from the repo root, never by comparing paths: on the PC git reports a UNC root."""
+    cwd, rest = _anchor(path)
+    if not cwd:
+        return False
+    rc, prefix = _git(cwd, "rev-parse", "--show-prefix")
+    return rc == 0 and _test_rel(prefix.strip() + rest)
+
+
+def _lf(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _read_before(path):
+    """(text, readable, exists). Bytes are kept through surrogateescape, so legacy encodings compare."""
+    try:
+        if os.path.getsize(path) > MAX_COMPARE:
+            return "", False, True
+        with open(path, "rb") as f:
+            return _lf(f.read().decode("utf-8", "surrogateescape")), True, True
+    except FileNotFoundError:
+        return "", True, False
+    except OSError:
+        return "", False, True
+
+
+def _changed(before, lines):
+    """Indexes of the lines that are new: stripped lines, compared as a multiset."""
+    old = Counter(l.strip() for l in before.split("\n"))
+    out = set()
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if old[s] > 0:
+            old[s] -= 1
+        elif s:
+            out.add(i)
+    return out
+
+
+def _scan_lines(lines, changed, in_test, prose_file):
+    """[(line number, kinds)] for changed lines, including a changed line inside a key block."""
+    out, fence, pem_left = [], False, 0
+    for i, line in enumerate(lines):
+        if prose_file and _FENCE.match(line):
+            fence = not fence
+            continue
+        kinds = set()
+        if i in changed:
+            kinds = {k for _, _, k in strict_hits(line, in_test, prose_file and not fence)}
+        if PK_BEGIN.search(line) and not PK_END.search(line):
+            pem_left = PEM_MAX_LINES
+        elif pem_left:
+            if PK_END.search(line):
+                pem_left = 0
+            else:
+                pem_left -= 1
+                if i in changed:
+                    kinds.add("private-key")
+        if kinds:
+            out.append((i + 1, sorted(kinds)))
+    return out
+
+
+def _mask_kinds(path, before, after, readable, exists, narrow_old):
+    """The mask tags this write would put where the guard hid a real value, or an empty set."""
+    if not exists:
+        return set()
+    was, now = Counter(_MASK_TAG.findall(before)), Counter(_MASK_TAG.findall(after))
+    raised = {t for t in now if now[t] > was[t]}
+    if not raised:
+        return set()
+    if not readable:
+        return raised
+    empty = {"allow": {}, "self": set()}
+    label = names_known(path)
+    try:
+        if narrow_old is not None and not mask_text(narrow_old, label, empty)[1]:
+            return set()  # the edit replaces only text Claude could see
+        shown = Counter(_MASK_TAG.findall(mask_text(before, label, empty)[0]))
+    finally:
+        del REVIEW[:]
+    hidden = {t for t in shown if shown[t] > was[t]}
+    if hidden & _SECRET_TAGS and raised & _SECRET_TAGS:
+        return raised & _SECRET_TAGS
+    return raised & hidden
+
+
+def _state_key():
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    p = os.path.join(STATE_DIR, "key")
+    try:
+        fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(secrets.token_bytes(32))
+    except FileExistsError:
+        pass
+    for _ in range(5):  # another hook may be between creating the file and writing it
+        with open(p, "rb") as f:
+            key = f.read()
+        if len(key) == 32:
+            return key
+        time.sleep(0.02)
+    raise OSError("no state key")
+
+
+def _digest(path, after):
+    text = os.path.normcase(os.path.abspath(path)) + "\0" + after
+    return hmac.new(_state_key(), text.encode("utf-8", "backslashreplace"), hashlib.sha256).hexdigest()
+
+
+def _pending():
+    """Live pending entries, oldest first; expired ones are removed."""
+    out, now = [], time.time()
+    try:
+        names = os.listdir(STATE_DIR)
+    except OSError:
+        return out
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        p = os.path.join(STATE_DIR, name)
+        try:
+            with open(p, encoding="utf-8") as f:
+                e = json.load(f)
+            if now - e["created"] > PENDING_TTL:
+                os.remove(p)
+            else:
+                out.append(e)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return sorted(out, key=lambda e: e["created"])
+
+
+def _save_pending(e):
+    p = os.path.join(STATE_DIR, e["id"] + ".json")
+    tmp = "%s.%s.tmp" % (p, secrets.token_hex(4))
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(e, f)
+    os.replace(tmp, p)
+
+
+def _remember(session, agent, path, digest):
+    norm = os.path.normcase(os.path.abspath(path))
+    for e in _pending():
+        if (e["session"], e["path"], e["hmac"]) == (session, norm, digest):
+            return e["id"]
+    e = {"id": secrets.token_hex(3), "session": session, "agent": agent, "path": norm, "hmac": digest,
+         "created": time.time(), "armed_until": 0}
+    _save_pending(e)
+    return e["id"]
+
+
+def _consume(session, agent, path, digest):
+    """True if the owner armed exactly this write. os.remove makes it work once."""
+    norm, now = os.path.normcase(os.path.abspath(path)), time.time()
+    for e in _pending():
+        if (e["session"], e["path"], e["hmac"]) == (session, norm, digest) and e["armed_until"] > now \
+                and (agent is None or agent == e["agent"]):
+            try:
+                os.remove(os.path.join(STATE_DIR, e["id"] + ".json"))
+                return True
+            except OSError:
+                continue
+    return False
+
+
+def arm_write_ok(prompt, session):
+    """write-ok [id]: allow one denied write in this session. The owner's prompt only."""
+    m = re.match(r"\s*write-ok(?:\s+([0-9a-f]{6})\b)?", prompt, re.I)
+    live = [e for e in _pending() if e["session"] == session]
+    if m and m.group(1):
+        live = [e for e in live if e["id"] == m.group(1).lower()]
+        if not live:
+            return {"systemMessage": "credential-guard: write-ok found no blocked write with that id in this session."}
+    if not live:
+        return {"systemMessage": "credential-guard: write-ok found no blocked write in this session."}
+    if len(live) > 1:
+        rows = ", ".join("%s (%s)" % (e["id"], os.path.basename(e["path"])) for e in live)
+        return {"systemMessage": "credential-guard: write-ok did nothing, %d writes are blocked: %s. "
+                                 "Send write-ok <id> for the one you reviewed." % (len(live), rows)}
+    e = live[0]
+    e["armed_until"] = time.time() + ARMED_TTL
+    _save_pending(e)
+    return {"systemMessage": "credential-guard: write-ok allows one retry of the blocked write to %s, for 10 minutes."
+                             % os.path.basename(e["path"])}
+
+
+def _deny(reason):
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+def write_check(event):
+    """PreToolUse on Write, Edit, NotebookEdit: the reply, or None to allow. Needs no config, so a
+    broken config cannot switch it off. Names the file, line and kind, never a value."""
+    tool, ti = event.get("tool_name"), event.get("tool_input") or {}
+    path = ti.get("notebook_path" if tool == "NotebookEdit" else "file_path")
+    if not isinstance(path, str):
+        return None
+    before, readable, exists = _read_before(path)
+    narrow_old = None
+    if tool == "Write":
+        if not isinstance(ti.get("content"), str):
+            return None
+        after = _lf(ti["content"])
+        compare, mask_after = before, after
+    elif tool == "Edit":
+        old, new = ti.get("old_string"), ti.get("new_string")
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
+        old, new = _lf(old), _lf(new)
+        if readable and old and old in before:
+            after = before.replace(old, new) if ti.get("replace_all") else before.replace(old, new, 1)
+            compare, mask_after, narrow_old = before, after, old
+        else:
+            after, compare, mask_after = new, "", before + "\n" + new
+    else:
+        if not isinstance(ti.get("new_source"), str):
+            return None
+        after = _lf(ti["new_source"])
+        compare, mask_after = "", before + "\n" + after
+
+    tags = _mask_kinds(path, before, mask_after, readable, exists, narrow_old)
+    if tags & _SECRET_TAGS:
+        return _deny("credential-guard: write blocked. %s holds real values Claude cannot see, and this write would "
+                     "replace them with the mask text. Use a narrow Edit that avoids the masked text, or the owner "
+                     "makes this change. write-ok cannot approve it." % path)
+
+    lines = after.split("\n")
+    changed = _changed(compare, lines)
+    prose_file = path.lower().endswith((".md", ".txt"))
+    hits = _scan_lines(lines, changed, False, prose_file)
+    if hits:
+        if secret_store(path):
+            hits = []
+        elif _in_test(path):
+            hits = _scan_lines(lines, changed, True, prose_file)
+    if not hits and not tags:
+        return None
+
+    session, agent = event.get("session_id"), event.get("agent_id")
+    digest = _digest(path, after)
+    if _consume(session, agent, path, digest):
+        return None
+    entry = _remember(session, agent, path, digest)
+    out = ["credential-guard: write blocked, id %s" % entry, "  file: " + path]
+    out += ["  line %-4d %s" % (n, ", ".join(kinds)) for n, kinds in hits[:PROMPT_ROWS]]
+    if len(hits) > PROMPT_ROWS:
+        out.append("  and %d more line%s" % (len(hits) - PROMPT_ROWS, _plural(len(hits) - PROMPT_ROWS)))
+    if tags:
+        out.append("  mask text would replace a real value: " + ", ".join(sorted(tags)))
+    out.append("  Keep secrets in .env, a database or a secret file and read them from there. "
+               "If this is a false alarm, the owner can send write-ok.")
+    return _deny("\n".join(out))
+
+
+# ---------------------------------------------------------------- audit
+_RESTRICTED = re.compile(r"/tmp/(?:bank|cc)(?:/|$)")  # real statements live there; never opened
+
+
+def _audit_blocked(path):
+    p = os.path.abspath(path).replace("\\", "/")
+    home = os.path.join(os.path.expanduser("~"), "ai-restricted").replace("\\", "/")
+    return _RESTRICTED.search(path.replace("\\", "/")) is not None or _RESTRICTED.search(p) is not None \
+        or p == home or p.startswith(home + "/")
+
+
+def _has_symlink(root, rel):
+    p = root
+    for part in rel.split("/"):
+        p = os.path.join(p, part)
+        try:
+            if os.path.islink(p) or not os.path.lexists(p):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def audit_repo(repo):
+    """[(file, line, kind)] for one repo's tracked files. Never a value. Read-only."""
+    root = os.path.abspath(repo)
+    rc, listing = _git(root, "ls-files", "-z", timeout=60)
+    if rc != 0:
+        return [("", 0, "git could not list this repo")]
+    rows = []
+    for rel in listing.split("\0"):
+        if not rel:
+            continue
+        full = os.path.join(root, *rel.split("/"))
+        if _audit_blocked(full) or _has_symlink(root, rel):
+            continue
+        label = names_known(rel)
+        if label:
+            rows.append((rel, 0, "tracked credential file (%s), not opened" % label))
+            continue
+        try:
+            if os.path.getsize(full) > MAX_COMPARE:
+                continue
+            with open(full, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        if b"\0" in data[:8192]:
+            continue
+        lines = _lf(data.decode("utf-8", "surrogateescape")).split("\n")
+        hits = _scan_lines(lines, set(range(len(lines))), _test_rel(rel), rel.lower().endswith((".md", ".txt")))
+        rows += [(rel, n, ", ".join(kinds)) for n, kinds in hits]
+    return rows
+
+
+def audit_main(repos):
+    """Print repo, file, line and kind for each repo. Nothing is changed."""
+    total = 0
+    for repo in repos:
+        if _audit_blocked(os.path.realpath(repo)):
+            print("%s\t\t0\tskipped: restricted" % repo)
+            continue
+        rows = audit_repo(repo)
+        total += len(rows)
+        for rel, n, kind in rows:
+            print("%s\t%s\t%d\t%s" % (repo, rel, n, kind))
+    print("audit: %d finding%s in %d repo%s" % (total, _plural(total), len(repos), _plural(len(repos))))
+    return 0
+
+
 def prompt_report(prompt, cfg):
     """The block notice for a prompt, or None if it is clean: source, then one row per line
-    with its kind, any file:line on it, and a short excerpt. Only masked text is quoted."""
+    with its kind, any file:line on it, and a short excerpt. Only masked text is quoted.
+    An agent report gets the strict detector, because a false alarm loses the whole report."""
     lines = prompt.split("\n")
     is_task = prompt.lstrip().startswith("<task-notification>")
+    detect = (lambda l: strict_line(l, report=True)) if is_task else scan_line
     base = next((i for i, l in enumerate(lines) if "<result>" in l), 0) if is_task else 0
     rows, total = [], 0
     for i, line in enumerate(lines):
-        masked, k = scan_line(line)
+        if is_task:  # the report's first and last lines carry its wrapper tags
+            line = re.sub(r"^<result>|</result>$", "", line)
+        masked, k = detect(line)
         masked, k2 = pii_line(masked, cfg)
         if not k + k2:
             continue
@@ -626,7 +1160,9 @@ def handle(event, cfg):
         report = prompt_report(prompt, cfg)
         del REVIEW[:]  # a prompt's log-only hits are his own text: not logged
         # continue:false, because decision:block makes Claude Code print the whole prompt after the reason.
-        return {"continue": False, "stopReason": report} if report else None
+        if report:
+            return {"continue": False, "stopReason": report}
+        return arm_write_ok(prompt, event.get("session_id")) if prompt.lstrip().lower().startswith("write-ok") else None
 
     ti = event.get("tool_input") or {}
     if not isinstance(ti, dict):
@@ -699,6 +1235,13 @@ def run(raw, load=None):
         return ""
     if not isinstance(event, dict):
         return ""
+    if event.get("hook_event_name") == "PreToolUse" and event.get("tool_name") in WRITE_TOOLS:
+        try:  # before any config load, so a broken config cannot switch the block off
+            out = write_check(event)
+        except Exception:
+            del REVIEW[:]
+            out = {"systemMessage": WRITE_FAILED}
+        return json.dumps(out) if out else ""
     try:
         out = handle(event, (load or load_config)())
         if load is None:
@@ -714,6 +1257,246 @@ def run(raw, load=None):
 
 
 # ---------------------------------------------------------------- selftest
+
+def _selftest_strict(check):
+    """The strict detector, the write block, write-ok and the mask rule. Fixtures are built at run time."""
+    global STATE_DIR
+    pw, hx, b64 = "Zx9fK2mQ7pL4", "a1b2c3d4" * 4, "Ab3/xY9+" * 5
+    sym = "!" + pw + "#aB3xY9"
+    tok = "gh" + "p_" + "a1B2" * 9
+    P, S, T = "pass" + "word", "api" + "_key", "to" + "ken"
+    head, tail = "-----BEGIN " + "PRIVATE KEY-----", "-----END " + "PRIVATE KEY-----"
+    body = "MIIE" + "x7Qa" * 14
+
+    for text in [P + ' = "' + pw + '"', P + ' = "' + sym + '"', S + ' = "' + hx + '"', S + ' = "' + b64 + '"',
+                 "DB_PASSWORD=" + pw, "export DB_PASSWORD=" + pw, "  " + P + ": " + pw, "- DB_PASSWORD=" + pw,
+                 P + ' := "' + pw + '"', 'cfg["' + P + '"] = "' + pw + '"', P + ': str = "' + pw + '"',
+                 "const " + P + " = `" + pw + "`", "--" + P + " " + pw, "GET /cb?access_" + T + "=" + hx + "&x=1",
+                 "DB_PASS=" + pw, 'pwd = "' + pw + '"', 'signingKey = "' + hx + '"',
+                 '{"user": "bob", "' + P + '": "' + pw + '"}', '{"user":"bob","' + P + '":"' + pw + '"}',
+                 "'user' => 'bob', '" + P + "' => '" + pw + "',", "define('DB_PASSWORD', '" + pw + "');",
+                 S + ' = "550e8400-e29b-41d4-a716-446655440000"', tok, head, "mysql://root:" + pw + "@db/app"]:
+        got, n = strict_line(text)
+        check("strict hit: " + text[:24], n >= 1 and pw not in got and hx not in got and tok not in got, True)
+    for text in ["login(user, " + P + "=new_" + P + ", remember=True)", "refresh(" + T + "=access_" + T + ", ttl=60)",
+                 "max_" + T + "s=config.max_" + T + "s", T.upper() + '_URL = "https://oauth2.example.com/' + T + '"',
+                 'API_KEY_HEADER = "X-Api-Key"', 'PASSWORD_HASH = "argon2id"', T + '_type = "bearer"',
+                 "'" + T + "_type' => 'Bearer',", "config('services.stripe.secret', 'fallback')",
+                 "'" + P + "' => 'required|min:8|confirmed',", "'" + P + "' => 'password.confirm',",
+                 P + '_field = "user_' + P + '"', T + "s = in+out+cache_read+cache_create",
+                 "- Tokens = in+out+cr+cc of the main row", P + " = user.passwordHash", P + " = currentUser." + P,
+                 P + " = get_" + P + "(user)", "    " + P + "=new_" + P + ",", "pass: read-only", "pass: 1024/1024",
+                 'cache_key = "cache:v2:user:settings"', "storage_key = 'user-settings-v2-cache'",
+                 "oauth_private_key = 'storage/oauth-private.key'", P + "_url = '/" + P + "/reset'",
+                 "DB_PASSWORD=${DB_PASSWORD}", "API_KEY=<withheld>", "API_KEY=%API_KEY%", "DB_PASSWORD=your_" + P,
+                 "<code>PASSWORD=</code>-style lines"]:
+        check("strict clean: " + text[:32], strict_line(text), (text, 0))
+    for text in ['ok = c in ("PASS", "PASS_WITH_CAVEATS_2026")', "the test the lookup cannot pass: `document.query2Selector`"]:
+        check("the word pass: " + text[:20], strict_line(text), (text, 0))
+    check("a quoted pass key still hits", strict_line('{"pass": "' + pw + '"}')[1], 1)
+    check("test path skips keyed", strict_line(P + ' = "' + pw + '"', in_test=True)[1], 0)
+    check("test path keeps tokens", strict_line(tok, in_test=True)[1], 1)
+    check("prose skips sentences", strict_line("use " + P + ' = "' + pw + '" in prose', prose=True)[1], 0)
+    check("prose keeps dotenv lines", strict_line("DB_PASSWORD=" + pw, prose=True)[1], 1)
+
+    # The two masking fixes.
+    check("formula not masked", scan_line(T + "s = in+out+cache_read+cache_create")[1], 0)
+    check("auth tokens still masked", scan_line("auth_" + T + "s = abc+def")[1], 1)
+    for text in ['{"user": "bob", "' + P + '": "' + pw + '"}', '{"user":"bob","' + P + '":"' + pw + '"}',
+                 "'user' => 'bob', '" + P + "' => '" + pw + "',", "define('DB_PASSWORD', '" + pw + "');"]:
+        check("masked after a pair: " + text[:20], pw in scan_line(text)[0], False)
+
+    # Agent reports use the strict detector, typed prompts keep the broad one.
+    cfg = {"allow": {}, "self": set()}
+
+    def say(text, session="s1"):
+        return handle({"hook_event_name": "UserPromptSubmit", "prompt": text, "session_id": session}, cfg)
+
+    def report(text):
+        return say('<task-notification>\n<summary>Agent "A" finished</summary>\n<result>' + text
+                   + "\n</result>\n</task-notification>")
+    check("report quoting code passes", report("- `login(user, " + P + "=new_" + P + ")`\n- " + T + "s = in+out+cr+cc"), None)
+    example = "assert login(" + P + '="hunter22")'
+    check("report quoting a test password passes", report("- `" + example + "`"), None)
+    check("the same literal in code still hits", strict_line(example)[1], 1)
+    check("report with a strong literal stops", (report(P + ' = "' + pw + '"') or {}).get("continue"), False)
+    check("report with a dotenv line stops", (report("DB_PASSWORD=hunter22") or {}).get("continue"), False)
+    check("report with a token stops", (report("found " + tok) or {}).get("continue"), False)
+    check("report with a key stops", (report(head + "\n" + body + "\n" + tail) or {}).get("continue"), False)
+    check("typed dotenv still stops", (say("DB_PASSWORD=" + pw + "\nAPP_ENV=local") or {}).get("continue"), False)
+
+    # The write block, in a real throwaway repo.
+    tmp = tempfile.mkdtemp()
+    saved, STATE_DIR = STATE_DIR, os.path.join(tmp, "state")
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(repo)
+    subprocess.run(["git", "init", "-q", repo], capture_output=True, timeout=10)
+
+    def put(name, data):
+        p = os.path.join(repo, *name.split("/"))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data if isinstance(data, bytes) else data.encode("utf-8"))
+        return p
+
+    def path(name):
+        return os.path.join(repo, *name.split("/"))
+
+    def event(tool, ti, session="s1", agent=None):
+        e = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": ti, "session_id": session}
+        if agent:
+            e["agent_id"] = agent
+        return e
+
+    def write(name, content, session="s1", agent=None):
+        return write_check(event("Write", {"file_path": path(name), "content": content}, session, agent))
+
+    def edit(name, old, new):
+        return write_check(event("Edit", {"file_path": path(name), "old_string": old, "new_string": new}))
+
+    def denied(out):
+        return ((out or {}).get("hookSpecificOutput") or {}).get("permissionDecision") == "deny"
+
+    def entry(out):
+        m = re.search(r"\bid ([0-9a-f]{6})\b", out["hookSpecificOutput"]["permissionDecisionReason"])
+        return m.group(1) if m else None
+
+    put(".gitignore", "/.env\n")
+    line = "DB_PASSWORD=" + pw
+    out = write("app.py", "x = 1\n" + P + ' = "' + pw + '"\n')
+    check("code secret denied", denied(out), True)
+    check("deny names the line", "line 2" in out["hookSpecificOutput"]["permissionDecisionReason"], True)
+    check("deny holds no value", pw in json.dumps(out), False)
+    check("clean write allowed", write("clean.py", "x = 1\n"), None)
+    check("ignored env allowed", write(".env", line), None)
+    for name in [".env.example", "sub/new/.env", ".env.py", "wp-config.php", "src/.npmrc"]:
+        check("not a store: " + name, denied(write(name, line)), True)
+    put("fill.py", S + ' = ""\n')
+    check("filling an empty key denied", denied(edit("fill.py", '""', '"' + hx + '"')), True)
+    legacy = put("legacy.py", ("a = 1\r\n" + P + ' = "' + pw + '"\r\n').encode())
+    check("legacy line, CRLF rewrite allowed", write("legacy.py", "a = 2\n" + P + ' = "' + pw + '"\n'), None)
+    check("edit near a legacy secret allowed", edit("legacy.py", "a = 1", "a = 3"), None)
+    check("legacy file exists", os.path.exists(legacy), True)
+    put("key.py", 'k = """' + head + "\n" + body + "\n" + tail + '"""\n')
+    check("key body edit denied", denied(edit("key.py", body, body[:-4] + "AAAA")), True)
+    for text in [head + "\n" + body + "\n" + tail, head + "\nProc-Type: 4,ENCRYPTED\n\n" + body + "\n" + tail,
+                 'k = "' + head + '\\n" \\\n  "' + body + '\\n"', '{"private_key": "' + head + "\\n" + body + '\\n"}']:
+        check("key form denied", denied(write("keys.py", text)), True)
+        check("key form stops a report", (report(text) or {}).get("continue"), False)
+    check("fenced dotenv denied", denied(write("n.md", "# Setup\n```\n" + line + "\n```\n")), True)
+    check("dotenv line in md denied", denied(write("n2.md", line + "\n")), True)
+    check("sentence in md allowed", write("n3.md", "Set " + P + ' = "' + pw + '" here.\n'), None)
+    check("test dir keyed allowed", write("tests/a.py", P + ' = "' + pw + '"\n'), None)
+    check("test dir token denied", denied(write("tests/b.py", tok + "\n")), True)
+    check("test_ script at root denied", denied(write("test_smtp.py", P + ' = "' + pw + '"\n')), True)
+    check("js spec allowed", write("src/a.spec.ts", P + ' = "' + pw + '"\n'), None)
+    check("yml test name denied", denied(write("site.test.yml", P + ": " + pw + "\n")), True)
+
+    # Never write a mask back over a real value.
+    put(".env", line + "\nAPP_ENV=local\n")
+    for text in ["DB_PASSWORD=<withheld>\nAPP_ENV=local\n", "MAIL_PASSWORD=<withheld>\nAPP_ENV=local\n",
+                 "export DB_PASSWORD=<withheld>\nAPP_ENV=local\n", 'DB_PASSWORD="<withheld>"\nAPP_ENV=local\n']:
+        out = write(".env", text)
+        check("mask over env denied", denied(out), True)
+        check("mask denial has no override", entry(out), None)
+    put("compose.yml", "url: postgres://u:" + pw + "@db:5432/app\n")
+    check("mask with changed port denied", denied(write("compose.yml", "url: postgres://u:<withheld>@db:5433/app\n")), True)
+    put("a.json", '{"args": ["postgres://u:' + pw + '@db/app"]}\n')
+    check("mid-line json mask denied", denied(write("a.json", '{"args": ["postgres://u:<withheld>@db/app"], "x": 1}\n')), True)
+    put("c.php", "'" + P + "' => '" + pw + "', 'host' => 'db',\n")
+    check("php mask denied", denied(write("c.php", "'" + P + "' => '<withheld>', 'host' => 'db2',\n")), True)
+    put("d.php", "define('DB_PASSWORD', '" + pw + "');\n")
+    check("define mask denied", denied(write("d.php", "define('DB_PASSWORD', '<withheld>');\n// x\n")), True)
+    put("l.php", b"// caf\xe9\ndefine('DB_PASSWORD', '" + pw.encode() + b"');\n")
+    check("latin-1 mask denied", denied(write("l.php", "// cafe\ndefine('DB_PASSWORD', '<withheld>');\n")), True)
+    os.makedirs(path("isdir"), exist_ok=True)
+    check("unreadable file, mask denied", denied(write("isdir", "x = <withheld>\n")), True)
+    say("write-ok")
+    check("write-ok cannot approve a mask", denied(write(".env", "DB_PASSWORD=<withheld>\nAPP_ENV=local\n")), True)
+    with open(path(".env"), encoding="utf-8") as f:
+        check("env value survived", pw in f.read(), True)
+    put("n.py", "# note\n" + P + ' = "' + pw + '"\n')
+    check("narrow edit may add the tag", edit("n.py", "# note", "# <withheld> note"), None)
+    put("n.py", "# note\n" + P + ' = "' + pw + '"\n')
+    check("write of the same is denied", denied(write("n.py", "# <withheld> note\n" + P + ' = "' + pw + '"\n')), True)
+    put("u.md", "Usage: skill foo\n")
+    check("usage tag allowed", write("u.md", "Usage: skill <name>\n"), None)
+    put("x.xml", "<name>a</name>\n")
+    check("xml tag edit allowed", edit("x.xml", "<name>a</name>", "<name>b</name>"), None)
+    put("h.html", "<p>x</p>\n")
+    check("html tag allowed", write("h.html", "<address>x</address>\n"), None)
+    put("p.yml", "first_name: Jane\n")
+    shutil.rmtree(STATE_DIR, ignore_errors=True)
+    out = write("p.yml", "first_name: <name>\n")
+    check("pii mask denied", denied(out), True)
+    check("pii mask has an id", bool(entry(out)), True)
+    say("write-ok")
+    check("write-ok approves a pii denial", write("p.yml", "first_name: <name>\n"), None)
+
+    # write-ok: one reviewed write, once.
+    shutil.rmtree(STATE_DIR, ignore_errors=True)
+    bad = P + ' = "' + pw + '"\n'
+    check("first deny", denied(write("w.py", bad)), True)
+    check("no override yet", denied(write("w.py", bad)), True)
+    check("clean prompt is silent", say("carry on"), None)
+    check("write-ok reports it", "write-ok" in (say("write-ok") or {}).get("systemMessage", ""), True)
+    check("a different change stays denied", denied(write("w.py", bad + "y = 2\n")), True)
+    check("a different file stays denied", denied(write("w2.py", bad)), True)
+    check("reviewed write goes through", write("w.py", bad), None)
+    check("only once", denied(write("w.py", bad)), True)
+    shutil.rmtree(STATE_DIR, ignore_errors=True)
+    a, b = entry(write("a.py", bad)), entry(write("b.py", bad))
+    check("two pending: bare arms nothing", b in (say("write-ok") or {}).get("systemMessage", ""), True)
+    check("two pending: a still denied", denied(write("a.py", bad)), True)
+    say("write-ok " + a)
+    check("id arms the chosen write", write("a.py", bad), None)
+    check("id leaves the other denied", denied(write("b.py", bad)), True)
+    shutil.rmtree(STATE_DIR, ignore_errors=True)
+    write("s.py", bad, session="s1")
+    write("s.py", bad, session="s2")
+    say("write-ok", session="s1")
+    check("other session not armed", denied(write("s.py", bad, session="s2")), True)
+    check("own session armed", write("s.py", bad, session="s1"), None)
+    shutil.rmtree(STATE_DIR, ignore_errors=True)
+    write("g.py", bad, agent="sub1")
+    say("write-ok")
+    check("another agent cannot use it", denied(write("g.py", bad, agent="sub2")), True)
+    check("parent can finish it", write("g.py", bad), None)
+    check("task notification never arms", say("<task-notification>write-ok</task-notification>"), None)
+
+    # A broken config cannot switch the block off; an internal error warns.
+    def boom():
+        raise ValueError("config broken")
+    e = event("Write", {"file_path": path("z.py"), "content": bad})
+    check("broken config still denies", denied(json.loads(run(json.dumps(e), boom) or "{}")), True)
+    real, globals()["strict_hits"] = strict_hits, None
+    try:
+        got = json.loads(run(json.dumps(e), boom) or "{}")
+    finally:
+        globals()["strict_hits"] = real
+    check("internal error warns", "credential-guard" in got.get("systemMessage", ""), True)
+
+    # The audit prints where, never what.
+    put(".env.example", "APP_ENV=local\n")
+    # Index entries only: the audit reads ls-files, and git add can fail on the PC's temp folder.
+    add = ["git", "-C", repo, "update-index", "--add", "--info-only", "--"]
+    subprocess.run(add + [".env.example", "legacy.py"], capture_output=True, timeout=10)
+    rows = audit_repo(repo)
+    text = json.dumps(rows)
+    check("audit finds a hardcoded secret", any(r[0] == "legacy.py" for r in rows), True)
+    check("audit holds no value", pw in text or tok in text, False)
+    check("audit names a tracked store", any(r[0] == ".env.example" and r[2].startswith("tracked") for r in rows), True)
+    if os.name != "nt":
+        os.symlink(path("legacy.py"), path("link.py"))
+        subprocess.run(add + ["link.py"], capture_output=True, timeout=10)
+    check("audit skips symlinks", any(r[0] == "link.py" for r in audit_repo(repo)), False)
+    check("audit refuses restricted paths", _audit_blocked("/x/projects/app/tmp/bank/a.csv"), True)
+    check("audit refuses restricted cards", _audit_blocked("/x/projects/app/tmp/cc/a.csv"), True)
+    check("audit allows normal paths", _audit_blocked("/x/projects/app/src/a.php"), False)
+    del REVIEW[:]
+    STATE_DIR = saved
+    shutil.rmtree(tmp, ignore_errors=True)
+
 
 def selftest():
     # Fixtures are built at run time, so the source holds no path or value the guard matches.
@@ -853,6 +1636,7 @@ def selftest():
                  "process.env.API_TOKEN", "sk-navigation-menu-wrapper-item", "url: https://example.com:8080/a",
                  "`PASSWORD=`-style lines", "set `TOKEN=` in the docs"]:
         check("no false positive: " + code, scan(code), (code, 0))
+        check("strict no false positive: " + code, strict_line(code), (code, 0))
 
     # Other tools keep their own output shape.
     rresp = {"type": "text", "file": {"filePath": envp, "content": "APP_ENV=local\nDB_PASSWORD=" + blob,
@@ -1002,6 +1786,8 @@ def selftest():
     real = load_config()
     check("config labels known", sorted(set(real.get("allow", {})) - set(l for l, _, _ in KNOWN)), [])
 
+    _selftest_strict(check)
+
     for f in fails:
         print("FAIL " + f)
     print("credential-guard selftest: %d failed" % len(fails))
@@ -1019,6 +1805,8 @@ if __name__ == "__main__":
         sys.exit(add_self())
     if sys.argv[1:2] == ["--pii-review"]:
         sys.exit(pii_review(clear=sys.argv[2:] == ["--clear"]))
+    if sys.argv[1:2] == ["--audit"]:
+        sys.exit(audit_main(sys.argv[2:]))
     # Bytes in, ASCII out: the hook's JSON is UTF-8, and Windows would decode stdin as cp1252
     # (seen 2026-11-05: a masked Read turned "…" into mojibake). json.dumps escapes non-ASCII.
     sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8", "replace")))
