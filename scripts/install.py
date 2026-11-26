@@ -20,7 +20,14 @@ import os
 import platform
 import shutil
 import sys
+from enum import IntEnum
 from pathlib import Path
+
+
+class InstallExitCode(IntEnum):
+    SUCCESS = 0
+    SELFTEST_FAILED = 1
+    INVALID_USAGE = 2
 
 HERE = Path(__file__).resolve().parent          # never derived from a detected root:
 HARNESS = HERE.parent                            # a script must find files next to it
@@ -266,9 +273,9 @@ def selftest():
 
     if fails:
         print(f"selftest FAILED ({len(fails)})")
-        return 1
+        return InstallExitCode.SELFTEST_FAILED
     print("selftest passed")
-    return 0
+    return InstallExitCode.SUCCESS
 
 
 def detect_root():
@@ -401,7 +408,7 @@ def main(argv):
     if plist:
         print(f"  launchctl unload {plist} && rm {plist}")
     print("\nHermes is not wired by this script — see hermes-AGENTS.md (now in the private local-ai-setup repo) for the manual step.")
-    return 0
+    return InstallExitCode.SUCCESS
 
 
 if __name__ == "__main__":
@@ -410,8 +417,8 @@ if __name__ == "__main__":
     verdict, text = parse_args(sys.argv[1:], sys.stdin.isatty())
     if verdict == "help":
         print(text.strip())
-        sys.exit(0)
+        sys.exit(InstallExitCode.SUCCESS)
     if verdict == "error":
         print(f"install.py: {text}\n\n{__doc__.strip()}", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(InstallExitCode.INVALID_USAGE)
     sys.exit(main(sys.argv[1:]))
