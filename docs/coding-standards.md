@@ -79,6 +79,16 @@ His rule, stated 2026-11-06. An error that says only "Failed" or "Error" is a bu
 - Shell scripts report the failing command and its exit code (`trap 'echo "line $LINENO: $BASH_COMMAND exited $?" >&2' ERR`), not a bare non-zero exit.
 - The privacy floor above still holds: no secrets, tokens or real PII in any error message, log or response.
 
+### Code reads by its names, with no magic values
+
+His rule, stated 2026-11-23, after a bare `sys.exit(2)` hid that the code meant "block this action": code has to be legible from its names, not from comments. A reader should be able to tell what a line does without looking anything up.
+
+- Functions, variables and types explain themselves: `list_descendant_pids(parent_pid)`, not `walk(p)`. If a comment explains *what*, I rename the thing instead. Comments are for *why*.
+- Exit codes, statuses, outcomes and modes are strict values (enums, named constants or frozen dataclasses), never bare numbers or loose strings: `sys.exit(HookExitCode.BLOCK_TOOL_CALL)`, not `sys.exit(2)`. In shell: `readonly EXIT_BLOCK_TOOL_CALL=2`.
+- Renaming keeps the existing values. Callers, hooks and other machines depend on them; Claude Code reads exit 2 from a hook as "block", for example.
+- Harness Python must still run on 3.9, so a string enum is `class Outcome(str, Enum)`, not `StrEnum`.
+- Limits and thresholds get a named constant with the unit in the name (`SERVE_WAIT_SECONDS = 30`), defined once near the top.
+
 ### TDD rule
 
 Every code change in a coding session is test-first, whether or not any skill triggers: write a failing test that fails for the right reason, write the minimum code to pass, go green, then refactor. **One failing test per lap** — a batch of assertions handed over at once is test-first, not TDD, and it measurably costs more (see the measurement below). Bugs get a regression test before the fix, and the test stays in the suite. Non-trivial logic (a branch, a loop, a parser, a money or security path) always leaves at least one runnable check behind.
