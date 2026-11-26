@@ -22,24 +22,33 @@ for c in python3 python py; do
   command -v "$c" >/dev/null 2>&1 && "$c" -c 'import json' >/dev/null 2>&1 && { PY=$c; break; }
 done
 
-# apply <settings-path> <write|check>   -> prints missing ids; exit 0 ok, 1 missing (check), 2 unreadable
+# Exit values callers and the health check rely on; the names are shared with the Python below.
+readonly EXIT_CODING_MODE_ON=0
+readonly EXIT_CODING_MODE_OFF=1
+readonly EXIT_CANNOT_RUN=2      # bad usage, no Python, or an unreadable settings.json
+export EXIT_CODING_MODE_ON EXIT_CODING_MODE_OFF EXIT_CANNOT_RUN
+
+# apply <settings-path> <write|check>   -> prints missing ids; exits with one of the values above
 apply() {
   "$PY" -c '
 import json, os, sys
+CODING_MODE_ON = int(os.environ["EXIT_CODING_MODE_ON"])
+CODING_MODE_OFF = int(os.environ["EXIT_CODING_MODE_OFF"])
+CANNOT_RUN = int(os.environ["EXIT_CANNOT_RUN"])
 path, mode, *ids = sys.argv[1:]
 d = {}
 if os.path.isfile(path):
     try: d = json.load(open(path, encoding="utf-8"))
-    except Exception as e: print("unreadable " + path + ": " + str(e)); sys.exit(2)
-    if not isinstance(d, dict): print("not a JSON object: " + path); sys.exit(2)
+    except Exception as e: print("unreadable " + path + ": " + str(e)); sys.exit(CANNOT_RUN)
+    if not isinstance(d, dict): print("not a JSON object: " + path); sys.exit(CANNOT_RUN)
 ep = d.get("enabledPlugins")
 ep = ep if isinstance(ep, dict) else {}
 missing = [i for i in ids if ep.get(i) is not True]
 retired = [i for i in os.environ.get("RETIRED", "").split() if i in ep]
 if mode == "check":
     bad = missing + ["retired:" + i for i in retired]
-    if bad: print(" ".join(bad)); sys.exit(1)
-    sys.exit(0)
+    if bad: print(" ".join(bad)); sys.exit(CODING_MODE_OFF)
+    sys.exit(CODING_MODE_ON)
 for i in retired: del ep[i]
 for i in ids: ep[i] = True
 d["enabledPlugins"] = ep
@@ -81,16 +90,16 @@ selftest() {
 
 case "${1:-}" in
   --selftest) selftest; exit $? ;;
-  ""|-h|--help) sed -n 2,9p "$0"; exit 2 ;;
+  ""|-h|--help) sed -n 2,9p "$0"; exit "$EXIT_CANNOT_RUN" ;;
 esac
-[ -n "$PY" ] || { echo "no working python3/python/py"; exit 2; }
+[ -n "$PY" ] || { echo "no working python3/python/py"; exit "$EXIT_CANNOT_RUN"; }
 dir=$1; mode=write
 [ "${2:-}" = "--check" ] && mode=check
-[ -d "$dir" ] || { echo "not a directory: $dir"; exit 2; }
+[ -d "$dir" ] || { echo "not a directory: $dir"; exit "$EXIT_CANNOT_RUN"; }
 out=$(apply "$dir/.claude/settings.json" "$mode"); rc=$?
 case $mode:$rc in
-  check:1) echo "coding mode off in $dir — missing: $out"; exit 1 ;;
-  check:0) echo "coding mode on in $dir"; exit 0 ;;
-  write:0) echo "coding mode written to $dir/.claude/settings.json"; exit 0 ;;
-  *) echo "$out"; exit 2 ;;
+  "check:$EXIT_CODING_MODE_OFF") echo "coding mode off in $dir — missing: $out"; exit "$EXIT_CODING_MODE_OFF" ;;
+  "check:$EXIT_CODING_MODE_ON") echo "coding mode on in $dir"; exit "$EXIT_CODING_MODE_ON" ;;
+  "write:$EXIT_CODING_MODE_ON") echo "coding mode written to $dir/.claude/settings.json"; exit "$EXIT_CODING_MODE_ON" ;;
+  *) echo "$out"; exit "$EXIT_CANNOT_RUN" ;;
 esac
