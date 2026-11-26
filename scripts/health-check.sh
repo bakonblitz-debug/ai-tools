@@ -186,6 +186,25 @@ check_plugin_helpers_in_sync() {
   echo "$n helper copies match ai-tools/scripts"
 }
 
+# The hooks run a machine-local copy of credential-guard (~/.claude/local-guard), so a dropped
+# share can't make Python exit 2 and block every prompt. A stale copy would guard with old
+# rules, silently; this catches it. sync-local-guard.py exits 3 when the source is unreachable.
+readonly LOCAL_GUARD_SOURCE_UNREACHABLE=3
+check_credential_guard_local_copy() {
+  local py="" detail rc
+  for c in python3 python py; do
+    have "$c" && "$c" -c 'import json' >/dev/null 2>&1 && { py=$c; break; }
+  done
+  [ -n "$py" ] || { echo "no working python3/python/py to compare the copy"; return 77; }
+  detail=$("$py" -I "$SCRIPTS/sync-local-guard.py" --check 2>&1); rc=$?
+  echo "$detail"
+  case $rc in
+    0) return 0 ;;
+    "$LOCAL_GUARD_SOURCE_UNREACHABLE") return 77 ;;
+    *) return 1 ;;
+  esac
+}
+
 # The derived-value check. The count changes as work is done, so asserting a number
 # would rot within days. What must hold is that every machine sees the SAME tree.
 # A disagreement means a stale mount, an unsynced clone, or a machine-local file
@@ -596,6 +615,15 @@ b
   out=$(WWW=$t/w check_plugin_helpers_in_sync)
   case $out in *x/scripts/py.sh*) ;; *) echo "  FAIL: (c) detail lacks the drifted copy: $out"; ST_FAIL=1 ;; esac
   rm -rf "$t/w/projects/plugins"
+  p7() { ( HOME=$t/h; WWW=$t/w; CREDENTIAL_GUARD_LOCAL_ROOT=$t/local-guard; export CREDENTIAL_GUARD_LOCAL_ROOT
+           ctx_expect "$1" "$2"; [ "$ST_FAIL" = 0 ] ) || ST_FAIL=1; }
+  p7 1 check_credential_guard_local_copy                 # no local copy yet
+  CREDENTIAL_GUARD_LOCAL_ROOT=$t/local-guard python3 -I "$SCRIPTS/sync-local-guard.py" --quiet >/dev/null 2>&1
+  p7 0 check_credential_guard_local_copy                 # the copy matches
+  echo "# drifted" >> "$t/local-guard/scripts/credential-guard.py"
+  p7 1 check_credential_guard_local_copy                 # a stale copy fails
+  rm -rf "$t/local-guard"
+  p7() { ( HOME=$t/h; WWW=$t/w; ctx_expect "$1" "$2"; [ "$ST_FAIL" = 0 ] ) || ST_FAIL=1; }
   mm=$t/w/context/memory; mkdir -p "$mm/index" "$mm/facts"
   p7 77 check_memory_reachable                           # no MEMORY.md yet
   printf -- '- [career](index/career.md) - topic
