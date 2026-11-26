@@ -42,6 +42,17 @@ import sys
 import tempfile
 import time
 from collections import Counter
+from enum import IntEnum
+
+
+class GuardCommandExitCode(IntEnum):
+    """Exit codes of the command-line modes. As a hook the guard always exits 0 and blocks
+    through its JSON output. Defined here, not imported: the hook runs with -I, which keeps
+    this folder off sys.path, and a failed import would silently switch the guard off."""
+    SUCCESS = 0
+    CHECK_FAILED = 1
+    REFUSED_INSIDE_CLAUDE_CODE = 2
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "..", "config", "credential-guard.json")
@@ -530,7 +541,7 @@ def flush_review():
 def _refuse_inside_claude():
     if os.environ.get("CLAUDECODE"):
         print("Refused: run this in your own terminal, not through Claude Code (its output would reach the model).")
-        sys.exit(2)
+        sys.exit(GuardCommandExitCode.REFUSED_INSIDE_CLAUDE_CODE)
 
 
 def add_self():
@@ -1097,7 +1108,7 @@ def audit_main(repos):
         for rel, n, kind in rows:
             print("%s\t%s\t%d\t%s" % (repo, rel, n, kind))
     print("audit: %d finding%s in %d repo%s" % (total, _plural(total), len(repos), _plural(len(repos))))
-    return 0
+    return GuardCommandExitCode.SUCCESS
 
 
 def prompt_report(prompt, cfg):
@@ -1801,7 +1812,7 @@ def selftest():
     for f in fails:
         print("FAIL " + f)
     print("credential-guard selftest: %d failed" % len(fails))
-    return 1 if fails else 0
+    return GuardCommandExitCode.CHECK_FAILED if fails else GuardCommandExitCode.SUCCESS
 
 
 if __name__ == "__main__":
@@ -1810,7 +1821,7 @@ if __name__ == "__main__":
             sys.exit(selftest())
         except Exception as e:  # a crash is a red test, not a traceback
             print("FAIL selftest crashed: %s %s" % (type(e).__name__, e))
-            sys.exit(1)
+            sys.exit(GuardCommandExitCode.CHECK_FAILED)
     if sys.argv[1:] == ["--add-self"]:
         sys.exit(add_self())
     if sys.argv[1:2] == ["--pii-review"]:
