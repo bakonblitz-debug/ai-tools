@@ -1328,6 +1328,11 @@ def _selftest_strict(check):
     # The write block, in a real throwaway repo.
     tmp = tempfile.mkdtemp()
     saved, STATE_DIR = STATE_DIR, os.path.join(tmp, "state")
+    # The fixture repo answers only to its own .gitignore: a machine's global ignore file
+    # (often listing every .env) would otherwise decide what counts as a store.
+    git_isolation = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "XDG_CONFIG_HOME": tmp}
+    environment_before_isolation = {name: os.environ.get(name) for name in git_isolation}
+    os.environ.update(git_isolation)
     repo = os.path.join(tmp, "repo")
     os.makedirs(repo)
     subprocess.run(["git", "init", "-q", repo], capture_output=True, timeout=10)
@@ -1495,6 +1500,11 @@ def _selftest_strict(check):
     check("audit allows normal paths", _audit_blocked("/x/projects/app/src/a.php"), False)
     del REVIEW[:]
     STATE_DIR = saved
+    for name, value_before in environment_before_isolation.items():
+        if value_before is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value_before
     shutil.rmtree(tmp, ignore_errors=True)
 
 
